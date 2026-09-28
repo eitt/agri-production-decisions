@@ -12,7 +12,17 @@ import pandas as pd
 import requests
 import yaml
 
-DANE_SERIES_URL = "https://www.dane.gov.co/files/operaciones/SIPSA/anex-SIPSA-SerieHistoricaMayorista-{year}.xlsx"
+DANE_SERIES_URLS = {
+    2018: "https://www.dane.gov.co/files/investigaciones/agropecuario/sipsa/series-historicas/series-historicas-precios-mayoristas-2018.xlsx",
+    2019: "https://www.dane.gov.co/files/investigaciones/agropecuario/sipsa/series-historicas/series-historicas-precios-mayoristas-2019.xlsx",
+    2020: "https://www.dane.gov.co/files/investigaciones/agropecuario/sipsa/series-historicas/series-historicas-precios-mayoristas-2020.xlsx",
+    2021: "https://www.dane.gov.co/files/investigaciones/agropecuario/sipsa/series-historicas/series-historicas-precios-mayoristas-2021.xlsx",
+    2022: "https://www.dane.gov.co/files/investigaciones/agropecuario/sipsa/series-historicas/series-historicas-precios-mayoristas-2022.xlsx",
+    2023: "https://www.dane.gov.co/files/operaciones/SIPSA/anex-SIPSA-SerieHistoricaMayorista-Dic2023.xlsx",
+    2024: "https://www.dane.gov.co/files/operaciones/SIPSA/anex-SIPSA-SerieHistoricaMayorista-2024.xlsx",
+    2025: "https://www.dane.gov.co/files/operaciones/SIPSA/anex-SIPSA-SerieHistoricaMayorista-2025.xlsx",
+    2026: "https://www.dane.gov.co/files/operaciones/SIPSA/anex-SIPSA-SerieHistoricaMayorista-2026.xlsx",
+}
 DANE_PRICE_PAGE = "https://www.dane.gov.co/index.php/estadisticas-por-tema/agropecuario/sistema-de-informacion-de-precios-sipsa/mayoristas-boletin-mensual-1"
 DANE_WSDL = "http://appweb.dane.gov.co/sipsaWS/SrvSipsaUpraBeanService?WSDL"
 DANE_WSDL_ALT = "http://appweb.dane.gov.co:9001/sipsaWS/SrvSipsaUpraBeanService?WSDL"
@@ -75,7 +85,14 @@ def download_year(
     target = out / f"SIPSA_wholesale_{int(year)}.xlsx"
     if target.exists() and target.stat().st_size > 0 and not overwrite:
         return target
-    url = DANE_SERIES_URL.format(year=int(year))
+    year = int(year)
+    if year not in DANE_SERIES_URLS:
+        raise ValueError(
+            f"No official SIPSA wholesale-series URL is configured for year {year}. "
+            f"Check {DANE_PRICE_PAGE}"
+        )
+
+    url = DANE_SERIES_URLS[year]
     r = _http_get(url, timeout=timeout)
     content_type = r.headers.get("content-type", "").lower()
     if len(r.content) < 1000 or ("html" in content_type and not r.content.startswith(b"PK")):
@@ -93,58 +110,206 @@ def download_years(
 ) -> list[Path]:
     return [download_year(int(y), out_dir=out_dir, overwrite=overwrite) for y in years]
 
+def _parse_sipsa_dates(s: pd.Series) -> pd.Series:
+    """Parse SIPSA dates stored either as Excel serials or text dates."""
+    out = pd.Series(pd.NaT, index=s.index, dtype="datetime64[ns]")
+
+    numeric = pd.to_numeric(s, errors="coerce")
+    is_excel_serial = numeric.notna() & numeric.between(20000, 80000)
+
+    if is_excel_serial.any():
+        out.loc[is_excel_serial] = pd.to_datetime(
+            numeric.loc[is_excel_serial],
+            unit="D",
+            origin="1899-12-30",
+            errors="coerce",
+        )
+
+    remaining = ~is_excel_serial
+    if remaining.any():
+        out.loc[remaining] = pd.to_datetime(
+            s.loc[remaining],
+            errors="coerce",
+            dayfirst=True,
+        )
+
+    return out
+
+
+def _parse_sipsa_numbers(s: pd.Series) -> pd.Series:
+    """Parse numeric SIPSA values while tolerating Colombian number formats."""
+    numeric = pd.to_numeric(s, errors="coerce")
+
+    unresolved = numeric.isna() & s.notna()
+
+    if unresolved.any():
+        txt = (
+            s.loc[unresolved]
+            .astype(str)
+            .str.strip()
+            .str.replace(r"\s+", "", regex=True)
+        )
+
+        # Colombian format: 1.234,56 -> 1234.56
+        both = txt.str.contains(r"\.", regex=True) & txt.str.contains(",", regex=False)
+        txt.loc[both] = (
+            txt.loc[both]
+            .str.replace(".", "", regex=False)
+            .str.replace(",", ".", regex=False)
+        )
+
+        # Decimal comma only: 1234,56 -> 1234.56
+        comma_only = ~both & txt.str.contains(",", regex=False)
+        txt.loc[comma_only] = txt.loc[comma_only].str.replace(",", ".", regex=False)
+
+        numeric.loc[unresolved] = pd.to_numeric(txt, errors="coerce")
+
+    return numeric
 
 def normalize_file(
     path: str | Path,
     source_contains: str | None = "Bucaramanga",
     market_contains: str | None = "Centroabastos",
 ) -> pd.DataFrame:
-    """Normalize a DANE historical-series workbook to date/product/source/price.
+    """Normalize DANE SIPSA historical wholesale-price workbooks.
 
-    Column names are detected rather than hard-coded because DANE workbooks vary across years.
-    Filtering is applied to the source/market text only when a recognizable source column exists.
+    SIPSA historical workbooks are not ordinary rectangular datasets.
+    Depending on the year, they contain metadata sheets and monthly or
+    annual data sheets whose first retained row acts as an embedded header.
+
+    The normalized schema is:
+        date, group, product, source, price, sheet, source_file
     """
-    sheets = pd.read_excel(path, sheet_name=None)
+
+    path = Path(path)
+
+    # Critical: read without assuming that row 1 contains column names.
+    sheets = pd.read_excel(
+        path,
+        sheet_name=None,
+        header=None,
+        engine="openpyxl",
+    )
+
     output: list[pd.DataFrame] = []
-    for sheet, df in sheets.items():
+
+    for sheet_name, raw in sheets.items():
+        if raw is None or raw.empty:
+            continue
+
+        df = raw.copy()
+
+        # Remove rows and columns that are mostly empty.
+        row_keep = df.notna().mean(axis=1) >= 0.50
+        df = df.loc[row_keep]
+
         if df.empty:
             continue
-        cols = list(df.columns)
-        date = _find_col(cols, ["fecha programada", "fecha", "fecha captura", "fecha encuesta", "fecha inicio"])
-        product = _find_col(cols, ["nombre articulo", "articulo", "producto", "alimento"])
-        source = _find_col(cols, ["nombre de la fuente", "fuen nombre", "fuente", "mercado", "plaza"])
-        city = _find_col(cols, ["ciudad", "municipio mercado", "municipio fuente"])
-        price = _find_col(cols, ["precio promedio diario", "precio promedio", "promedio kg", "precio", "promedio"])
-        if date is None or product is None or price is None:
-            continue
-        use = [date, product] + ([source] if source is not None else []) + ([city] if city is not None else []) + [price]
-        z = df[use].copy()
-        rename = {date: "date", product: "product", price: "price"}
-        if source is not None:
-            rename[source] = "source"
-        if city is not None:
-            rename[city] = "city"
-        z = z.rename(columns=rename)
-        z["date"] = pd.to_datetime(z["date"], errors="coerce", dayfirst=True)
-        z["price"] = pd.to_numeric(z["price"], errors="coerce")
-        z = z.dropna(subset=["date", "product", "price"])
-        if source_contains:
-            searchable = z.get("source", pd.Series("", index=z.index)).astype(str) + " " + z.get(
-                "city", pd.Series("", index=z.index)
-            ).astype(str)
-            z = z[searchable.str.contains(source_contains, case=False, na=False)]
-        if market_contains:
-            searchable = z.get("source", pd.Series("", index=z.index)).astype(str) + " " + z.get(
-                "city", pd.Series("", index=z.index)
-            ).astype(str)
-            z = z[searchable.str.contains(market_contains, case=False, na=False)]
-        z["sheet"] = str(sheet)
-        z["source_file"] = Path(path).name
-        output.append(z)
-    if not output:
-        raise ValueError(f"No recognizable SIPSA wholesale table was found in {path}")
-    return pd.concat(output, ignore_index=True).sort_values(["product", "date"])
 
+        col_keep = df.notna().mean(axis=0) >= 0.50
+        df = df.loc[:, col_keep]
+
+        df = df.dropna(axis=0, how="all").dropna(axis=1, how="all")
+
+        if df.empty or df.shape[1] < 5:
+            continue
+
+        # The official SIPSA files use five analytical fields.
+        # Additional columns are usually formatting/metadata artefacts.
+        df = df.iloc[:, :5].copy()
+
+        # The first retained row is an embedded header/title row in
+        # the historical files and is not an observation.
+        if len(df) > 1:
+            df = df.iloc[1:].copy()
+
+        df.columns = [
+            "date",
+            "group",
+            "product",
+            "source",
+            "price",
+        ]
+
+        df["date"] = _parse_sipsa_dates(df["date"])
+        df["price"] = _parse_sipsa_numbers(df["price"])
+
+        df["group"] = df["group"].astype("string").str.strip()
+        df["product"] = df["product"].astype("string").str.strip()
+        df["source"] = df["source"].astype("string").str.strip()
+
+        # Keep only actual observations.
+        df = df.dropna(subset=["date", "product", "price"])
+
+        # Remove rows that may still contain repeated headers.
+        header_like = (
+            df["product"]
+            .astype(str)
+            .map(_norm)
+            .isin(["alimento", "producto", "articulo"])
+        )
+        df = df.loc[~header_like]
+
+        if df.empty:
+            continue
+
+        # Market information is normally contained in one string such as
+        # "Bucaramanga, Centroabastos".
+        searchable = df["source"].fillna("").astype(str)
+
+        if source_contains:
+            df = df[
+                searchable.str.contains(
+                    source_contains,
+                    case=False,
+                    na=False,
+                    regex=False,
+                )
+            ]
+            searchable = df["source"].fillna("").astype(str)
+
+        if market_contains:
+            df = df[
+                searchable.str.contains(
+                    market_contains,
+                    case=False,
+                    na=False,
+                    regex=False,
+                )
+            ]
+
+        if df.empty:
+            continue
+
+        df["sheet"] = str(sheet_name)
+        df["source_file"] = path.name
+
+        output.append(df)
+
+    if not output:
+        # Produce a much more useful diagnostic than the previous error.
+        sheet_shapes = {
+            str(name): tuple(frame.shape)
+            for name, frame in sheets.items()
+        }
+
+        raise ValueError(
+            f"No SIPSA observations for "
+            f"{source_contains!r}/{market_contains!r} were found in {path}. "
+            f"Workbook sheets and raw shapes: {sheet_shapes}"
+        )
+
+    result = pd.concat(output, ignore_index=True)
+
+    # Monthly sheets sometimes repeat observations already present
+    # in previous sheets; retain each actual market observation once.
+    result = result.drop_duplicates(
+        subset=["date", "group", "product", "source", "price"]
+    )
+
+    return result.sort_values(
+        ["product", "date", "source"]
+    ).reset_index(drop=True)
 
 def weekly_prices(df: pd.DataFrame) -> pd.DataFrame:
     z = df.copy()
