@@ -1,0 +1,20 @@
+name: agri-production-decisions
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - numpy
+  - pandas
+  - scipy
+  - scikit-learn
+  - statsmodels
+  - matplotlib
+  - pyyaml
+  - openpyxl
+  - requests
+  - tabulate
+  - pip
+  - pip:
+      - pyscipopt
+      - zeep
+      - -e .

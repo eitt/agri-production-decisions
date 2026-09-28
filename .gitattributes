@@ -1,0 +1,7 @@
+* text=auto eol=lf
+*.csv text diff=csv
+*.tex text
+*.md text
+*.pdf binary
+*.xlsx binary
+*.zip binary

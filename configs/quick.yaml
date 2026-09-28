@@ -1,0 +1,47 @@
+project:
+  run_id: quick
+  seed: 2026
+
+data:
+  mode: seed
+  city: Bucaramanga
+  market: Centroabastos
+  productivity: data/seed/productividad_actualizada.csv
+  price_history: data/seed/precios_historicos_2013_2017.csv
+  price_forecast: data/seed/demo_price_forecast_104w.csv
+  demand: null
+  download:
+    enabled: false
+
+forecast:
+  enabled: false
+  horizon: 104
+  test_size: 52
+  selection_metric: smape
+
+experiment:
+  instances: [I01_micro, I02_small]
+  seeds: [2026]
+  methods: [nsga2, hnsga2]
+  exact_instances: []
+  nsga2:
+    population: 20
+    generations: 8
+  hybrid:
+    population: 20
+    generations: 8
+    refinement_fraction: 0.25
+    warmup_generations: 2
+    min_training_samples: 8
+    backend: slsqp
+    refinement_time_limit: 10
+  exact:
+    points: 7
+    time_limit: 300
+    mip_gap: 0.001
+    threads: 1
+
+report:
+  dpi: 180
+  export_pdf: true
+  export_latex: true

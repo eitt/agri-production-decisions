@@ -1,0 +1,27 @@
+name: Quick reproduction
+
+on:
+  workflow_dispatch:
+
+jobs:
+  quick:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: Run offline pipeline
+        run: agriopt pipeline --config configs/quick.yaml --run-id github_quick
+      - name: Upload reproducibility bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: quick-reproduction
+          path: |
+            results/github_quick
+            artifacts/github_quick

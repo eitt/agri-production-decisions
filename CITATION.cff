@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+title: "Agricultural Production Decisions under Price Risk: Exact Multiobjective Optimization and Surrogate-Assisted NSGA-II"
+message: "If you use this software or its benchmark instances, please cite the associated manuscript."
+type: software
+authors:
+  - family-names: "Talero Sarmiento"
+    given-names: "Leonardo Hernán"
+version: 0.3.0
+date-released: 2026-09-28
+repository-code: "https://github.com/<ORG_OR_USER>/<REPOSITORY>"
+preferred-citation:
+  type: article
+  title: "Agricultural Production Decisions under Price Risk: Exact Multiobjective Optimization and Surrogate-Assisted NSGA-II"
+  authors:
+    - family-names: "Talero Sarmiento"
+      given-names: "Leonardo Hernán"
+  journal: "International Journal of Production Research"
+  year: 2026
+  notes: "Manuscript under preparation; replace this placeholder after submission/publication."
