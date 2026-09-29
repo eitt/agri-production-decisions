@@ -40,31 +40,55 @@ agricultural production planning; multiobjective optimization; NSGA-II; matheuri
 
 \section{Introduction}
 
-Crop planning requires a producer to commit land and timing before harvest prices are observed. Maturation delays, lot capacity, and recovery requirements make these decisions difficult to reverse, while heterogeneous local yields and correlated prices connect agronomic choices to portfolio risk. Production planning must therefore represent not only expected economic return but also the exposure created by the timing and composition of harvests. Reviews of agri-food planning models identify this integration of biological and market constraints as a persistent modelling requirement \citep{Ahumada2009}. Farm-level diversification studies likewise show why economic risk should be evaluated jointly with return rather than treated as an informal qualification after a plan has been selected \citep{Burbano2022}.
+Crop planning commits scarce land and operational time before harvest prices become observable, while maturation delays and recovery requirements make many decisions costly to reverse. These commitments affect farm income, exposure to correlated market movements, and the productive continuity of heterogeneous lots, making planning consequential for both livelihoods and resource stewardship. Agri-food planning reviews accordingly emphasize that useful decision models must connect biological calendars, market conditions, and operational restrictions within a coherent temporal representation \citep{Ahumada2009}.
 
-Two computational tensions follow. First, exact multiobjective optimization can generate informative reference trade-offs and solver bounds, but mixed-integer quadratic models become expensive as feasible crop events multiply across lots and weeks. Second, evolutionary methods scale without requiring global mixed-integer solves, but their area decisions may leave exploitable continuous structure unused. NSGA-II remains a standard baseline because nondominated sorting and diversity preservation generate a portfolio of alternatives in one run \citep{Deb2002}. Matheuristics offer an intermediate design: an evolutionary search determines the combinatorial schedule, and mathematical optimization improves continuous decisions conditional on that schedule. Comparable decompositions have been used in multiobjective production scheduling to preserve tractable mathematical structure inside population-based search \citep{Hu2024}.
+Production planning more generally has moved beyond deterministic cost minimization toward settings involving uncertain parameters, heterogeneous resources, interdependent decisions, and several competing objectives. Exact multiobjective methods can provide status-bearing trade-offs, whereas evolutionary methods can explore extensive nonconvex decision spaces and return diverse alternatives within a single run \citep{Mavrotas2009,Deb2002}. However, growing combinations of products, resources, and periods make computational scalability inseparable from solution quality, particularly when mathematical subproblems are repeatedly embedded inside population-based search.
 
-Continuous refinement itself can dominate runtime when applied to every offspring. Surrogate-assisted evolutionary optimization addresses this allocation problem by learning where expensive calls are likely to be useful, while retaining true objective evaluations for selection and reporting \citep{Liu2024}. This logic is pertinent here because fixing crop identities and harvest weeks leaves a convex quadratic area-allocation problem. A learned gate may reduce the number of conditional refinements, but fewer calls are valuable only if the resulting loss in Pareto quality is acceptable.
+Agriculture intensifies these difficulties because planting and harvest dates are biologically linked, yield evidence varies geographically, crop families require recovery intervals, and prices co-move across markets. Existing models address uncertain maturation, demand, harvest, and yield \citep{Tan2012}, while portfolio-based farm planning connects diversification with financial and environmental exposure \citep{Radulescu2014,Burbano2022}. Nevertheless, an implementable plan must integrate those economic trade-offs with weekly crop sequences and continuous land allocation rather than treating diversification as an aggregate acreage decision.
 
-This study evaluates that quality--effort trade-off through one reproducible decision model and four solution methods: an exact SCIP $\varepsilon$-constraint procedure, standard NSGA-II, NSGA-II with full continuous refinement, and surrogate-guided H-NSGA-II. The contribution is threefold. The model combines event-based land use with correlated monetary risk and physical activation bounds. The experiment distinguishes certified SCIP points from time-limited incumbents instead of describing the entire exact archive as optimal. Finally, the ablation makes refinement calls and time visible alongside Pareto indicators. The analysis asks: (i) how quickly exact reference computation becomes costly; (ii) how approximate fronts compare with the SCIP incumbent reference; and (iii) whether selective refinement yields a defensible balance between front quality and computational effort.
+The resulting model contains a combinatorial scheduling layer and a structured continuous allocation layer, creating a natural opportunity for exact optimization, evolutionary search, and matheuristic decomposition. Production research shows that hybrid methods can preserve useful mathematical structure while extending practical scale \citep{Battaia2022,Hu2024}, yet continuous refinement becomes burdensome when every evolutionary offspring receives an optimization call. Surrogate assistance can allocate expensive evaluations more selectively, although savings remain meaningful only when measured alongside changes in Pareto-front quality \citep{Jin2011,Liu2024}.
+
+This study therefore addresses three questions that connect planning value, computational tractability, and the consequences of selectively allocating mathematical refinement across candidate agricultural schedules. RQ1 asks how rapidly exact $\varepsilon$-constraint reference computation becomes costly as farms, lots, crops, planning weeks, and feasible production events increase jointly. RQ2 asks how standard NSGA-II and two refinement-based matheuristics compare against status-aware SCIP incumbent archives using replicated Pareto-quality and computational-effort indicators. RQ3 asks whether surrogate-guided selection can reduce continuous-refinement effort while preserving enough frontier quality to offer a defensible alternative under constrained runtime budgets.
+
+To answer these questions, the study formulates a weekly bi-objective event model maximizing expected income while minimizing covariance-based monetary price risk under empirical eligibility and agronomic constraints. The computational design compares SCIP $\varepsilon$-constraint search, standard NSGA-II, exhaustive continuous refinement, and surrogate-guided selective refinement using identical benchmark data and replicated stochastic seeds. Its contribution is a controlled, status-aware comparison that exposes certification, frontier quality, refinement calls, and runtime without claiming universal algorithmic superiority beyond the evaluated instances.
 
 \section{Related Research}
 
-\subsection{Agricultural production planning under economic risk}
+\subsection{Production planning under uncertainty, heterogeneous resources, and multiple objectives}
 
-Agricultural planning models span tactical production, harvest, distribution, and resource-allocation decisions \citep{Ahumada2009}. Annual-crop models must additionally coordinate maturation and harvest timing with uncertain yields or markets \citep{Tan2012}. A portfolio interpretation is useful because crop choices create joint rather than independent exposure: diversification can reduce risk when price movements are imperfectly correlated. Empirical farm-planning work has operationalized this principle by comparing diversified strategies through return distributions and risk \citep{Burbano2022}. The present model adopts the same economic intuition but embeds it in a weekly event schedule with lot-specific productivity.
+Contemporary production planning increasingly represents multiple performance criteria, resource heterogeneity, and uncertainty instead of relying exclusively on deterministic efficiency or cost objectives. Line-balancing reviews document expanding model variants, operational constraints, data requirements, and exact or heuristic solution families across increasingly heterogeneous industrial production environments \citep{Battaia2013,Boysen2022}. Hybridization research further shows that increasingly structured production problems motivate combinations of mathematical programming, decomposition, and metaheuristics rather than one universally dominant solution paradigm \citep{Battaia2022}.
 
-The formulation uses price-return covariance rather than independent crop penalties. Monetary exposure depends on both output and harvest-week price, so equal land allocations can create different risk profiles across crops, lots, and weeks. This representation remains a planning approximation: it quantifies correlated output-price exposure but does not claim to represent every production, weather, or behavioural risk faced by a farm.
+Multiobjective production models require explicit treatment of trade-offs because improving one operational or economic criterion can degrade another criterion without yielding a single unequivocal optimum. The $\varepsilon$-constraint method produces interpretable alternatives by optimizing one objective while systematically bounding another, although its repeated mathematical programs can become computationally demanding \citep{Mavrotas2009}. Population-based alternatives such as NSGA-II instead approximate several nondominated solutions simultaneously through elitist sorting and diversity preservation, making replicated evaluation essential for stochastic comparisons \citep{Deb2002}.
 
-\subsection{Multiobjective evolutionary optimization}
+Heterogeneous resources add more than scale because suitability, productivity, capacity, and timing determine which assignments are feasible and how strongly they contribute to each objective. Parallel-batch scheduling research illustrates how hybrid evolutionary mechanisms can coordinate assignment, batching, and delivery structures that resist straightforward exact solution at realistic sizes \citep{Kucukkoc2024}. This production-planning stream establishes the need for scalable multiobjective methods, but it does not determine how expensive mathematical improvement should be distributed among agricultural candidates.
 
-NSGA-II ranks candidates by nondomination and uses crowding distance to retain diversity along the approximated frontier \citep{Deb2002}. Its relevance to agricultural planning is practical: one run returns multiple income--risk alternatives, and decoding can enforce calendar feasibility before objective evaluation. Stochastic performance nevertheless varies across seeds, making replicated quality indicators necessary. Hypervolume summarizes convergence and spread relative to a reference point; IGD$^+$ measures the distance from reference points to the approximation; and additive epsilon records the worst shift required for the approximation to weakly dominate the reference.
+\subsection{Agricultural production planning under economic and biological constraints}
 
-\subsection{Matheuristics and surrogate-assisted optimization}
+Agricultural production planning joins tactical resource allocation with biological timing, uncertain market outcomes, spatially variable productivity, and operational decisions extending from planting through harvest and distribution. The foundational agri-food review by \citet{Ahumada2009} identifies planning models across these linked decisions, while \citet{Tan2012} explicitly represent demand, maturation, harvest, and yield risk for annual crops. These characteristics distinguish agricultural planning from generic allocation because feasible decisions depend on biological calendars that constrain when occupied land becomes available again.
 
-Matheuristics divide a problem so mathematical programming solves a structured subproblem while a heuristic explores the discrete search space. Production-scheduling research demonstrates that mathematical decoding can improve continuous or assignment decisions without repeatedly solving the full mixed-integer model \citep{Hu2024}. In this study, a decoded crop schedule fixes event identities and dates; only cultivated areas remain continuous.
+Portfolio formulations provide a complementary economic perspective because crop returns are jointly distributed, meaning diversification depends on covariance rather than independent crop-specific penalties. \citet{Radulescu2014} integrate expected return with financial and environmental risks, whereas \citet{Burbano2022} apply decision analysis and portfolio theory to diversification under horticultural uncertainty. Those studies motivate covariance-aware risk measurement, although their aggregate decision structures do not reproduce weekly lot occupancy and crop-family recovery requirements.
 
-Surrogate assistance adds a resource-allocation layer. Reviews distinguish global, local, hybrid, and learning-based strategies, but a common principle is that predicted utility should determine which expensive evaluations receive budget \citep{Liu2024}. Here an Extra Trees regressor predicts realized refinement gain from candidate features. The surrogate never supplies reported income or risk and never determines archive membership from predicted objectives; it only selects refinement candidates, with a random exploration share retained.
+Recent agricultural multiobjective studies increasingly combine sustainability, distribution logistics, interactive decision support, and evolutionary search while retaining consequential application-specific agronomic constraints. \citet{Vergara2025} optimize cultivation and distribution decisions for Colombian yam systems, whereas \citet{Huang2025} incorporate fuzzy information and expert rules into an enhanced NSGA-II crop-planning framework. \citet{Kropp2026} add interactive decision making to evolutionary agricultural optimization and report competitive solution support with fewer evaluations, demonstrating growing interest in computationally economical decision interaction.
+
+The present setting extends this stream by linking empirical municipality--crop eligibility, event-level weekly calendars, continuous cultivated areas, and correlated harvest-price exposure within one reproducible production model. Its risk term remains deliberately bounded because it represents covariance-based price exposure rather than weather, yield, behavioural, or complete supply-chain uncertainty.
+
+\subsection{Matheuristics for multiobjective production planning}
+
+Matheuristics exploit complementary strengths by assigning combinatorial exploration to a heuristic while mathematical programming resolves a structured subproblem or improves selected candidate solutions. In multiobjective cellular manufacturing, \citet{Hu2024} embed mathematical optimization within evolutionary scheduling, showing how exact structure can support rather than replace population-based search. This decomposition is especially relevant when fixing discrete identities and times converts the remaining allocation problem into a more tractable continuous program.
+
+Production applications demonstrate several ways to connect mathematical and heuristic components, including formulation-driven neighborhoods, decomposition, route improvement, and coordinated scheduling decisions. \citet{Li2022} combine an efficient formulation with a matheuristic for unrelated parallel machines, while \citet{Qin2024} address capacitated multi-level lot sizing with substitution and backorders. Related designs improve production routing \citep{Vadseth2023} and integrate production with distribution scheduling \citep{Vie2025}, confirming that hybrid structure can broaden computational reach across planning levels.
+
+Industrial evidence also indicates that practical matheuristics must be judged through computational reliability and decision quality under realistic planning horizons rather than through algorithm labels alone. \citet{Seyfi2026} integrate lot sizing, machine scheduling, shifts, and workforce planning for washing-machine production, obtaining scalable feasible solutions when longer horizons challenge direct optimization. These studies motivate conditional mathematical refinement, but they rarely isolate whether refining every evolutionary candidate is preferable to allocating refinement through learned utility.
+
+\subsection{Surrogate-guided allocation of optimization effort}
+
+Surrogate-assisted evolutionary computation replaces or prioritizes expensive evaluations using models trained on previously evaluated candidates, thereby treating computation as a resource-allocation decision. Early synthesis emphasizes that imperfect surrogates require explicit model management and continued contact with true evaluations to avoid misleading the search \citep{Jin2011}. Multiobjective surveys similarly identify accuracy, dimensionality, infill selection, and limited evaluation budgets as central design challenges for computationally expensive optimization \citep{Chugh2019}.
+
+More recent reviews broaden this foundation by classifying surrogate models, algorithmic roles, applications, and unresolved questions across continuous and combinatorial expensive optimization. \citet{He2023} review surrogate-assisted evolutionary algorithms across several problem classes and applications, while \citet{Liu2024} show that expensive combinatorial settings remain substantially less developed than continuous counterparts. A recent differential-evolution review likewise stresses that real-world value depends on whether surrogate overhead remains small relative to the evaluations being rationed \citep{Yu2025}.
+
+Current algorithmic developments improve relationship learning and local-region management for expensive multiobjective problems, but their customary goal remains prediction or replacement of expensive objective evaluations. \citet{Pierce2025} learn informative comparison relationships among candidate solutions, whereas \citet{Wang2026} adapt local-region search for challenging high-dimensional expensive multiobjective optimization problems within demanding practical settings. The present study instead predicts realized optimization gain and uses that estimate only to decide which candidates receive a true continuous-refinement call.
+
+Across these four streams, no reviewed study jointly provides weekly agricultural scheduling, covariance-based monetary risk, exact status-aware references, exhaustive continuous refinement, and surrogate-gated refinement within one controlled experiment. This gap supports a focused contribution concerning the allocation of optimization effort, while avoiding broader claims that the underlying algorithms or agricultural constraints are individually unprecedented.
 
 \section{Decision Setting and Data}
 
@@ -250,6 +274,8 @@ A decision-level example was selected from the median-hypervolume H-NSGA-II seed
 
 \section{Discussion}
 
+The findings address a narrower gap than introducing an entirely new optimization family, because their main value lies in connecting agricultural scheduling with controlled refinement allocation. Relative to agricultural multiobjective models and production matheuristics, the experiment makes the computational consequence of exhaustive versus surrogate-gated continuous improvement directly observable under identical data, operators, and seeds.
+
 The experiment separates three computational roles. SCIP supplies economically interpretable reference points and status information, but its rapid runtime growth and the prevalence of time-limited incumbents restrict certification beyond I01. Standard NSGA-II supplies diverse fronts at low and comparatively stable cost. Conditional continuous refinement exploits convex area structure, yet more local optimization does not guarantee a better global archive because refinement changes the search trajectory and consumes time without expanding the discrete schedule space.
 
 Surrogate-guided refinement succeeds at its immediate task: it directs one quarter as many SLSQP calls toward candidates with a higher useful-refinement rate. The larger completed instances show the practical value of that allocation through substantial runtime reductions. However, lower hypervolume and worse distance indicators relative to full refinement show that some omitted calls still matter to the final front. The defensible interpretation is therefore conditional. When runtime is constrained, selective refinement offers a tunable intermediate method; when Pareto quality relative to the incumbent reference dominates computation, this experiment gives no basis for preferring H-NSGA-II over the alternatives.
@@ -277,20 +303,80 @@ No potential conflict of interest is reported by the author.
 \bibitem[Ahumada \& Villalobos(2009)]{Ahumada2009}
 Ahumada, O., \& Villalobos, J. R. (2009). Application of planning models in the agri-food supply chain: A review. \emph{European Journal of Operational Research, 196}(1), 1--20. https://doi.org/10.1016/j.ejor.2008.02.014
 
+\bibitem[Batta\"ia \& Dolgui(2013)]{Battaia2013}
+Batta\"ia, O., \& Dolgui, A. (2013). A taxonomy of line balancing problems and their solution approaches. \emph{International Journal of Production Economics, 142}(2), 259--277. https://doi.org/10.1016/j.ijpe.2012.10.020
+
+\bibitem[Batta\"ia \& Dolgui(2022)]{Battaia2022}
+Batta\"ia, O., \& Dolgui, A. (2022). Hybridizations in line balancing problems: A comprehensive review on new trends and formulations. \emph{International Journal of Production Economics, 250}, 108673. https://doi.org/10.1016/j.ijpe.2022.108673
+
+\bibitem[Boysen et al.(2022)]{Boysen2022}
+Boysen, N., Schulze, P., \& Scholl, A. (2022). Assembly line balancing: What happened in the last fifteen years? \emph{European Journal of Operational Research, 301}(3), 797--814. https://doi.org/10.1016/j.ejor.2021.11.043
+
 \bibitem[Burbano-Figueroa et al.(2022)]{Burbano2022}
 Burbano-Figueroa, O., Sierra-Monroy, A., David-Hinestroza, A., Whitney, C., Borgemeister, C., \& Luedeling, E. (2022). Farm-planning under risk: An application of decision analysis and portfolio theory for the assessment of crop diversification strategies in horticultural systems. \emph{Agricultural Systems, 199}, 103409. https://doi.org/10.1016/j.agsy.2022.103409
+
+\bibitem[Chugh et al.(2019)]{Chugh2019}
+Chugh, T., Sindhya, K., Hakanen, J., \& Miettinen, K. (2019). A survey on handling computationally expensive multiobjective optimization problems with evolutionary algorithms. \emph{Soft Computing, 23}(9), 3137--3166. https://doi.org/10.1007/s00500-017-2965-0
 
 \bibitem[Deb et al.(2002)]{Deb2002}
 Deb, K., Pratap, A., Agarwal, S., \& Meyarivan, T. (2002). A fast and elitist multi-objective genetic algorithm: NSGA-II. \emph{IEEE Transactions on Evolutionary Computation, 6}(2), 182--197. https://doi.org/10.1109/4235.996017
 
+\bibitem[He et al.(2023)]{He2023}
+He, C., Zhang, Y., Gong, D., \& Ji, X. (2023). A review of surrogate-assisted evolutionary algorithms for expensive optimization problems. \emph{Expert Systems with Applications, 217}, 119495. https://doi.org/10.1016/j.eswa.2022.119495
+
 \bibitem[Hu et al.(2024)]{Hu2024}
 Hu, Y., Zhang, L., Wang, Q., Zhang, Z., \& Tang, Q. (2024). A matheuristic-based multi-objective evolutionary algorithm for flexible assembly job shop scheduling in cellular manufacture. \emph{Swarm and Evolutionary Computation, 87}, 101549. https://doi.org/10.1016/j.swevo.2024.101549
+
+\bibitem[Huang et al.(2025)]{Huang2025}
+Huang, Z., Pu, Y., Zhang, Q., Wang, Y., Yang, J., \& Gu, Y. (2025). A Fuzzy-Expert enhanced NSGA-II approach for sustainable agricultural systems. \emph{Scientific Reports, 15}, 34070. https://doi.org/10.1038/s41598-025-14488-w
+
+\bibitem[Jin(2011)]{Jin2011}
+Jin, Y. (2011). Surrogate-assisted evolutionary computation: Recent advances and future challenges. \emph{Swarm and Evolutionary Computation, 1}(2), 61--70. https://doi.org/10.1016/j.swevo.2011.05.001
+
+\bibitem[Kropp et al.(2026)]{Kropp2026}
+Kropp, I., Nejadhashemi, A. P., Jha, P. K., Spinner, E., \& Toscano Pulido, G. (2026). Integrating interactive decision making into evolutionary multiobjective agricultural optimization. \emph{Computers and Electronics in Agriculture, 242}, 111359. https://doi.org/10.1016/j.compag.2025.111359
+
+\bibitem[Kucukkoc et al.(2024)]{Kucukkoc2024}
+Kucukkoc, I., Aydin Keskin, G., Karaoglan, A. D., \& Karadag, S. (2024). A hybrid discrete differential evolution--genetic algorithm approach with a new batch formation mechanism for parallel batch scheduling considering batch delivery. \emph{International Journal of Production Research, 62}(1--2), 460--482. https://doi.org/10.1080/00207543.2023.2233626
+
+\bibitem[Li et al.(2022)]{Li2022}
+Li, X., Cote, J.-F., Coelho, L. C., \& Wu, P. (2022). Novel efficient formulation and matheuristic for large-sized unrelated parallel machine scheduling with release dates. \emph{International Journal of Production Research, 60}(20), 6104--6123. https://doi.org/10.1080/00207543.2021.1983224
 
 \bibitem[Liu et al.(2024)]{Liu2024}
 Liu, S., Wang, H., Peng, W., \& Yao, W. (2024). Surrogate-assisted evolutionary algorithms for expensive combinatorial optimization: A survey. \emph{Complex \& Intelligent Systems, 10}, 5933--5949. https://doi.org/10.1007/s40747-024-01465-5
 
+\bibitem[Mavrotas(2009)]{Mavrotas2009}
+Mavrotas, G. (2009). Effective implementation of the $\varepsilon$-constraint method in multi-objective mathematical programming problems. \emph{Applied Mathematics and Computation, 213}(2), 455--465. https://doi.org/10.1016/j.amc.2009.03.037
+
+\bibitem[Pierce et al.(2025)]{Pierce2025}
+Pierce, C. M., Kim, Y.-K., \& Bazarov, I. (2025). A comparison-relationship-surrogate evolutionary algorithm for multi-objective optimization. \emph{Swarm and Evolutionary Computation, 95}, 101947. https://doi.org/10.1016/j.swevo.2025.101947
+
+\bibitem[Qin et al.(2024)]{Qin2024}
+Qin, H., Zhuang, E., Yu, Y., \& Li, H. (2024). A matheuristic approach for the multi-level capacitated lot-sizing problem with substitution and backorder. \emph{International Journal of Production Research, 62}(13), 4645--4673. https://doi.org/10.1080/00207543.2023.2270076
+
+\bibitem[R\u{a}dulescu et al.(2014)]{Radulescu2014}
+R\u{a}dulescu, M., R\u{a}dulescu, C. Z., \& Zb\u{a}ganu, G. (2014). A portfolio theory approach to crop planning under environmental constraints. \emph{Annals of Operations Research, 219}(1), 243--264. https://doi.org/10.1007/s10479-011-0902-7
+
+\bibitem[Seyfi \& Yan{\i}ko\u{g}lu(2026)]{Seyfi2026}
+Seyfi, S. A., \& Yan{\i}ko\u{g}lu, \.{I}. (2026). Optimizing washing machine production at Vestel: A matheuristic approach to planning and scheduling. \emph{International Journal of Production Research, 64}(3), 839--871. https://doi.org/10.1080/00207543.2025.2559135
+
 \bibitem[Tan \& Comden(2012)]{Tan2012}
 Tan, B., \& Comden, N. (2012). Agricultural planning of annual plants under demand, maturation, harvest, and yield risk. \emph{European Journal of Operational Research, 220}(2), 539--549. https://doi.org/10.1016/j.ejor.2012.02.005
+
+\bibitem[Vadseth et al.(2023)]{Vadseth2023}
+Vadseth, S. T., Andersson, H., St\aa lhane, M., \& Chitsaz, M. (2023). A multi-start route improving matheuristic for the production routeing problem. \emph{International Journal of Production Research, 61}(22), 7608--7629. https://doi.org/10.1080/00207543.2022.2154402
+
+\bibitem[Vergara Rodr\'iguez et al.(2025)]{Vergara2025}
+Vergara Rodr\'iguez, C. J., Mendoza-Ortega, G. P., M\'armol Barriosnuevo, M., \& D\'iaz Sierra, M. (2025). Multi-objective optimization for the sustainable planning of yam cultivation and distribution in the Colombian Caribbean. \emph{Frontiers in Sustainability, 6}, 1653365. https://doi.org/10.3389/frsus.2025.1653365
+
+\bibitem[Vi\'e et al.(2025)]{Vie2025}
+Vi\'e, M.-S., Zufferey, N., \& Coelho, L. C. (2025). A production and distribution scheduling matheuristic for reducing supply chain variations. \emph{Transportation Research Part E: Logistics and Transportation Review, 194}, 103905. https://doi.org/10.1016/j.tre.2024.103905
+
+\bibitem[Wang et al.(2026)]{Wang2026}
+Wang, Q., Li, H., Zhang, W., Zhang, Y., Gong, D., Chu, F., Mohamed, A. W., \& Muhammad, I. (2026). Surrogate-assisted evolutionary algorithm with adaptive local region search for high-dimensional expensive multi-objective optimization problems. \emph{Swarm and Evolutionary Computation, 100}, 102232. https://doi.org/10.1016/j.swevo.2025.102232
+
+\bibitem[Yu et al.(2025)]{Yu2025}
+Yu, L., Meng, Z., Kong, L., Sn\'a\v{s}el, V., \& Pan, J.-S. (2025). Surrogate-assisted differential evolution: A survey. \emph{Swarm and Evolutionary Computation, 94}, 101879. https://doi.org/10.1016/j.swevo.2025.101879
 
 \end{thebibliography}
 
