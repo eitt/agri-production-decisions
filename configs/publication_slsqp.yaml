@@ -55,3 +55,10 @@ report:
   dpi: 300
   export_pdf: true
   export_latex: true
+
+reporting:
+  fx:
+    cop_per_usd: 3306.86
+    reference_date: 2026-09-28
+    source: "Superintendencia Financiera de Colombia / Banco de la Republica"
+    frozen: true
