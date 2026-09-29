@@ -245,7 +245,8 @@ def plot_refinement(seed_metrics: pd.DataFrame, out: Path) -> None:
     save_figure(fig, out / "surrogate_refinement_efficiency.pdf")
 
 
-def make_schedule(fronts: pd.DataFrame, seed_metrics: pd.DataFrame, names: dict, fx: float, out: Path) -> dict:
+def make_schedule(fronts: pd.DataFrame, seed_metrics: pd.DataFrame, names: dict, fx: float,
+                  catalog: pd.DataFrame, out: Path) -> dict:
     instance, method = "I02_small", "hnsga2"
     seed = representative_seed(seed_metrics, instance, method)
     z = fronts[(fronts.instance == instance) & (fronts.method == method) & (fronts.seed == seed)].copy()
@@ -265,6 +266,36 @@ def make_schedule(fronts: pd.DataFrame, seed_metrics: pd.DataFrame, names: dict,
     ].rename(columns={"crop_en": "crop_name"})
     schedule_export.to_csv(out.parent / "representative_schedule.csv", index=False)
 
+    row = catalog[catalog.instance == instance].iloc[0]
+    src_path = str(ROOT / "src")
+    if src_path not in sys.path:
+        sys.path.insert(0, src_path)
+    from agriopt.instances import _lot_allocation
+    lot_areas, _ = _lot_allocation(
+        int(row.farms), int(row.lots), float(row.total_area_ha), str(row.heterogeneity),
+        np.random.default_rng(int(row.seed)),
+    )
+    horizon = int(row.horizon_weeks)
+    used_area = np.zeros((len(lot_areas), horizon), dtype=float)
+    for event in events.itertuples(index=False):
+        used_area[int(event.lot), int(event.sow):int(event.harvest)] += float(event.area_m2)
+    used_area = np.minimum(used_area, lot_areas[:, None])
+    occupied = used_area > 1e-10
+    occupied_weeks = occupied.sum(axis=1)
+    lot_occupancy = occupied_weeks / horizon
+    lot_area_utilization = used_area.sum(axis=1) / (horizon * lot_areas)
+    space_time_utilization = float(used_area.sum() / (horizon * lot_areas.sum()))
+    mean_lot_occupancy = float(lot_occupancy.mean())
+    mean_idle_weeks = float((horizon - occupied_weeks).mean())
+    pd.DataFrame({
+        "lot": np.arange(len(lot_areas), dtype=int),
+        "lot_area_m2": lot_areas,
+        "occupied_weeks": occupied_weeks,
+        "idle_weeks": horizon - occupied_weeks,
+        "temporal_occupancy": lot_occupancy,
+        "area_adjusted_space_time_utilization": lot_area_utilization,
+    }).to_csv(out.parent / "representative_schedule_utilization.csv", index=False)
+
     fig, ax = plt.subplots(figsize=(7.0, 4.5))
     crops = list(dict.fromkeys(events.crop_en.tolist()))
     palette = plt.get_cmap("tab20")
@@ -274,13 +305,37 @@ def make_schedule(fronts: pd.DataFrame, seed_metrics: pd.DataFrame, names: dict,
                 edgecolor="white", linewidth=0.4)
         ax.text((row.sow + row.harvest) / 2, row.lot, f"{row.crop_en}\n{row.area_ha:.2f} ha",
                 ha="center", va="center", fontsize=6, clip_on=True)
-    ax.set_yticks(sorted(events.lot.unique()))
-    ax.set_yticklabels([f"Lot {int(x)+1}" for x in sorted(events.lot.unique())])
+    lots = sorted(events.lot.unique())
+    ax.set_yticks(lots)
+    ax.set_yticklabels([f"Lot {int(x)+1} | occupied {100 * lot_occupancy[int(x)]:.1f}%" for x in lots])
     ax.invert_yaxis(); ax.set_xlabel("Planning week"); ax.set_ylabel("Lot"); _axes(ax)
-    fig.tight_layout(); save_figure(fig, out / "representative_schedule.pdf")
+    ax.text(1.0, 1.025,
+            f"Area-adjusted space-time utilization: {100 * space_time_utilization:.1f}%  |  "
+            f"Mean lot occupancy: {100 * mean_lot_occupancy:.1f}%  |  "
+            f"Mean idle time: {mean_idle_weeks:.1f} weeks/lot",
+            transform=ax.transAxes, ha="right", va="bottom", fontsize=7.2, color="#333333")
+    fig.tight_layout()
+    for extension in ("pdf", "svg", "png"):
+        kwargs = {"dpi": 300} if extension == "png" else {}
+        fig.savefig(out / f"representative_schedule.{extension}", bbox_inches="tight", **kwargs)
+    plt.close(fig)
     return {"instance": instance, "method": method, "seed": seed, "solution_id": int(choice.solution_id),
             "income_kusd": float(choice.income_kusd), "risk_kusd2": float(choice.risk_kusd2),
-            "events": int(len(events))}
+            "events": int(len(events)), "space_time_utilization": space_time_utilization,
+            "mean_lot_occupancy": mean_lot_occupancy, "mean_idle_weeks": mean_idle_weeks,
+            "lot_temporal_occupancy": [float(value) for value in lot_occupancy],
+            "lot_area_adjusted_utilization": [float(value) for value in lot_area_utilization]}
+
+
+def schedule_macros(schedule: dict) -> list[str]:
+    return [
+        rf"\newcommand{{\RepresentativeIncomeKUSD}}{{{schedule['income_kusd']:.2f}}}",
+        rf"\newcommand{{\RepresentativeRiskKUSDsq}}{{{schedule['risk_kusd2']:.2f}}}",
+        rf"\newcommand{{\RepresentativeLandUtilizationPct}}{{{100 * schedule['space_time_utilization']:.1f}}}",
+        rf"\newcommand{{\RepresentativeMeanLotOccupancyPct}}{{{100 * schedule['mean_lot_occupancy']:.1f}}}",
+        rf"\newcommand{{\RepresentativeMeanIdleWeeks}}{{{schedule['mean_idle_weeks']:.1f}}}",
+        rf"\newcommand{{\RepresentativeEventCount}}{{{schedule['events']}}}",
+    ]
 
 
 def build_tables(snapshot: dict, runs: pd.DataFrame, seed: pd.DataFrame, summary: pd.DataFrame,
@@ -330,8 +385,7 @@ def build_tables(snapshot: dict, runs: pd.DataFrame, seed: pd.DataFrame, summary
         rf"\newcommand{{\NIncludedInstances}}{{{len(included)}}}",
         rf"\newcommand{{\LargestIncludedInstance}}{{{_latex(cat.iloc[-1].instance)}}}",
         rf"\newcommand{{\LargestIncludedLots}}{{{int(cat.iloc[-1].lots)}}}",
-        rf"\newcommand{{\RepresentativeIncomeKUSD}}{{{schedule['income_kusd']:.2f}}}",
-        rf"\newcommand{{\RepresentativeRiskKUSDsq}}{{{schedule['risk_kusd2']:.2f}}}",
+        *schedule_macros(schedule),
     ]
     (table_dir.parent / "results_macros.tex").write_text("\n".join(macro) + "\n", encoding="utf-8")
 
@@ -343,6 +397,40 @@ def compile_paper() -> None:
         if result.returncode:
             tail = "\n".join((result.stdout + "\n" + result.stderr).splitlines()[-40:])
             raise RuntimeError(f"LaTeX pass {pass_no} failed:\n{tail}")
+
+
+def refresh_schedule_only(run: str, compile_tex: bool = True) -> None:
+    artifact = ROOT / "artifacts" / run
+    snapshot_path = artifact / "paper_snapshot.json"
+    runs_path = artifact / "paper_snapshot_runs.csv"
+    if not snapshot_path.exists() or not runs_path.exists():
+        raise FileNotFoundError(f"Frozen publication snapshot is missing for run {run}")
+    snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    runs = pd.read_csv(runs_path)
+    cfg = yaml.safe_load((ROOT / snapshot["configuration_path"]).read_text(encoding="utf-8"))
+    fx = float(cfg["reporting"]["fx"]["cop_per_usd"])
+    names = yaml.safe_load((ROOT / "configs" / "product_names_en.yaml").read_text(encoding="utf-8"))
+    catalog = pd.read_csv(ROOT / "data" / "seed" / "benchmark_instance_catalog.csv")
+    fronts = collect_fronts(runs, fx)
+    seed_metrics, _ = compute_metrics(fronts, runs)
+    generated = ROOT / "paper" / "generated"
+    figures = generated / "figures"
+    figures.mkdir(parents=True, exist_ok=True)
+    schedule = make_schedule(fronts, seed_metrics, names, fx, catalog, figures)
+    (artifact / "representative_schedule.json").write_text(json.dumps(schedule, indent=2), encoding="utf-8")
+
+    macro_path = generated / "results_macros.tex"
+    existing = macro_path.read_text(encoding="utf-8").splitlines() if macro_path.exists() else []
+    schedule_names = {
+        "RepresentativeIncomeKUSD", "RepresentativeRiskKUSDsq", "RepresentativeLandUtilizationPct",
+        "RepresentativeMeanLotOccupancyPct", "RepresentativeMeanIdleWeeks", "RepresentativeEventCount",
+    }
+    retained = [line for line in existing if not any(f"{{\\{name}}}" in line for name in schedule_names)]
+    macro_path.write_text("\n".join(retained + schedule_macros(schedule)) + "\n", encoding="utf-8")
+    if compile_tex:
+        compile_paper()
+    print(f"Schedule regenerated from frozen snapshot: {figures / 'representative_schedule.pdf'}")
+    print(f"Utilization audit: {generated / 'representative_schedule_utilization.csv'}")
 
 
 def overleaf_bundle() -> Path:
@@ -388,7 +476,7 @@ def refresh(run: str, compile_tex: bool = True) -> None:
     plot_runtime(summary, cat_included, figures)
     plot_quality_time(summary, figures)
     plot_refinement(seed_metrics, figures)
-    schedule = make_schedule(fronts, seed_metrics, names, fx, figures)
+    schedule = make_schedule(fronts, seed_metrics, names, fx, catalog, figures)
     (artifact / "representative_schedule.json").write_text(json.dumps(schedule, indent=2), encoding="utf-8")
     build_tables(snapshot, runs, seed_metrics, summary, catalog, schedule, tables, artifact)
     (generated / "RUN_ID.txt").write_text(run + "\n", encoding="utf-8")
@@ -406,10 +494,15 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run", default="publication_slsqp_test")
     parser.add_argument("--no-compile", action="store_true")
+    parser.add_argument("--schedule-only", action="store_true",
+                        help="Regenerate the representative schedule without rewriting the publication snapshot")
     args = parser.parse_args()
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
-        refresh(args.run, compile_tex=not args.no_compile)
+        if args.schedule_only:
+            refresh_schedule_only(args.run, compile_tex=not args.no_compile)
+        else:
+            refresh(args.run, compile_tex=not args.no_compile)
 
 
 if __name__ == "__main__":
