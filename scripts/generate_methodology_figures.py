@@ -234,7 +234,7 @@ def _draw_matrix(
 
 
 def figure_chromosome(names: dict[str, str]) -> plt.Figure:
-    fig, ax = plt.subplots(figsize=(WIDTH_MM * MM_TO_IN, 220 * MM_TO_IN))
+    fig, ax = plt.subplots(figsize=(WIDTH_MM * MM_TO_IN, 210 * MM_TO_IN))
     ax.set_axis_off()
     _panel_label(ax, 0.02, 0.98, "(a)", "Three aligned L x S gene matrices (illustrative 3 lots x 4 slots)")
 
@@ -322,7 +322,7 @@ def figure_chromosome(names: dict[str, str]) -> plt.Figure:
         w = (gantt_x1 - gantt_x0) * (end - start) / weeks
         y = gantt_y[lot] - 0.020
         ax.add_patch(Rectangle((x, y), w, 0.040, transform=ax.transAxes, facecolor=color, edgecolor=COLORS["ink"], linewidth=0.5))
-        ax.text(x + w / 2, gantt_y[lot], label, transform=ax.transAxes, ha="center", va="center", fontsize=7.0, color="white", weight="bold")
+        ax.text(x + w / 2, gantt_y[lot], label, transform=ax.transAxes, ha="center", va="center", fontsize=7.8, color="white", weight="bold")
     ax.text(0.98, 0.177, "Illustrative encoding; not an empirical solution", transform=ax.transAxes, ha="right", va="bottom", fontsize=5.8, style="italic", color=COLORS["muted"])
     return fig
 
@@ -335,7 +335,7 @@ def figure_variants(config: dict) -> plt.Figure:
     budget = int(round(pop * float(hcfg["refinement_fraction"])))
     explore = max(1, int(round(0.20 * budget)))
     exploit = budget - explore
-    fig, ax = plt.subplots(figsize=(WIDTH_MM * MM_TO_IN, 230 * MM_TO_IN))
+    fig, ax = plt.subplots(figsize=(WIDTH_MM * MM_TO_IN, 245 * MM_TO_IN))
     ax.set_axis_off()
 
     _panel_label(ax, 0.02, 0.985, "(a)", "Shared evolutionary generation")
@@ -348,7 +348,7 @@ def figure_variants(config: dict) -> plt.Figure:
             _arrow(ax, (x + shared_w, 0.914), (sx[i + 1], 0.914))
     ax.text(0.5, 0.848, "Shared decision semantics and variation mechanics; initialization details are deliberately omitted", transform=ax.transAxes, ha="center", va="center", fontsize=6.3, color=COLORS["muted"], style="italic")
 
-    _panel_label(ax, 0.02, 0.805, "(b)", "Alternative allocation of conditional continuous area refinement")
+    _panel_label(ax, 0.02, 0.820, "(b)", "Alternative allocation of conditional continuous area refinement")
     columns = [0.025, 0.35, 0.675]
     col_w = 0.30
     headers = [
@@ -357,7 +357,7 @@ def figure_variants(config: dict) -> plt.Figure:
         ("Surrogate-guided\nH-NSGA-II", COLORS["teal_light"], COLORS["teal"]),
     ]
     for x, (title, face, edge) in zip(columns, headers):
-        _box(ax, x, 0.715, col_w, 0.062, title, face=face, edge=edge, fontsize=6.5, weight="bold")
+        _box(ax, x, 0.700, col_w, 0.062, title, face=face, edge=edge, fontsize=6.5, weight="bold")
 
     _box(ax, 0.04, 0.545, 0.27, 0.125, "No continuous\nmathematical refinement\n\nDecoded values remain\nthe final true objectives", face="white", edge=COLORS["muted"], fontsize=6.6)
     _box(ax, 0.04, 0.475, 0.27, 0.052, "0 refinement calls\nper generation", face=COLORS["grey_light"], edge=COLORS["grey"], fontsize=6.1, weight="bold")
@@ -399,7 +399,7 @@ def figure_workflow(snapshot: dict, config: dict) -> plt.Figure:
     ax.set_axis_off()
 
     ax.text(0.02, 0.98, "1", transform=ax.transAxes, ha="left", va="top", fontsize=10, weight="bold", color=COLORS["blue"])
-    ax.text(0.055, 0.98, "Empirical inputs", transform=ax.transAxes, ha="left", va="top", fontsize=8.8, weight="bold", color=COLORS["ink"])
+    ax.text(0.055, 0.98, "Materials and empirical inputs", transform=ax.transAxes, ha="left", va="top", fontsize=8.8, weight="bold", color=COLORS["ink"])
     inputs = [
         (0.03, "Productivity evidence", "Municipality | crop\nplanting month | yield"),
         (0.35, "Wholesale prices", "DANE SIPSA weekly series\nand 104-week forecast"),
@@ -427,7 +427,7 @@ def figure_workflow(snapshot: dict, config: dict) -> plt.Figure:
     _arrow(ax, (0.50, 0.515), (0.50, 0.490), color=COLORS["blue"])
 
     ax.text(0.02, 0.49, "3", transform=ax.transAxes, ha="left", va="top", fontsize=10, weight="bold", color=COLORS["blue"])
-    ax.text(0.055, 0.49, "Four computational methods", transform=ax.transAxes, ha="left", va="top", fontsize=8.8, weight="bold", color=COLORS["ink"])
+    ax.text(0.055, 0.49, "Solution methods", transform=ax.transAxes, ha="left", va="top", fontsize=8.8, weight="bold", color=COLORS["ink"])
     method_specs = [
         (0.025, "Exact epsilon-constraint\nSCIP", "I01-I04\n11 income thresholds", COLORS["blue_light"], COLORS["blue"]),
         (0.267, "NSGA-II", "No continuous\nrefinement", COLORS["grey_light"], COLORS["muted"]),
@@ -449,16 +449,17 @@ def figure_workflow(snapshot: dict, config: dict) -> plt.Figure:
     _arrow(ax, (0.50, 0.190), (0.50, 0.170), color=COLORS["blue"])
 
     ax.text(0.02, 0.170, "5", transform=ax.transAxes, ha="left", va="top", fontsize=10, weight="bold", color=COLORS["blue"])
-    ax.text(0.055, 0.170, "Evaluation and publication filter", transform=ax.transAxes, ha="left", va="top", fontsize=8.8, weight="bold", color=COLORS["ink"])
+    ax.text(0.055, 0.170, "Post-hoc evaluation and reporting filter", transform=ax.transAxes, ha="left", va="top", fontsize=8.8, weight="bold", color=COLORS["ink"])
     eval_specs = [
-        (0.025, "Pareto quality", "Normalized HV | IGD+\nAdditive epsilon\nNondominated points"),
-        (0.267, "Computational effort", "Runtime | calls\nCumulative\nrefinement time"),
-        (0.509, "Refinement effectiveness", "Useful-refinement\nhit rate"),
-        (0.751, "Exact-reference evidence", "SCIP status | gap\nruntime"),
+        (0.015, "Pareto quality", "Normalized HV | IGD+\nAdditive epsilon\nNondominated points"),
+        (0.210, "Computational effort", "Runtime | calls\nCumulative\nrefinement time"),
+        (0.405, "Refinement effectiveness", "Useful-refinement\nhit rate"),
+        (0.600, "Operational diagnostics", "Space-time utilization\nLot temporal occupancy\nMean idle weeks"),
+        (0.795, "Exact-reference evidence", "SCIP status | gap\nruntime"),
     ]
     for x, head, detail in eval_specs:
-        _box(ax, x, 0.075, 0.224, 0.070, f"{head}\n{detail}", face=COLORS["green_light"], edge=COLORS["green"], fontsize=5.4, weight="bold")
-    _box(ax, 0.16, 0.004, 0.68, 0.058, "Publication-completeness filter\nInclude an instance only when every required\nmethod and seed output is complete", face=COLORS["red_light"], edge=COLORS["red"], fontsize=5.4, weight="bold")
+        _box(ax, x, 0.075, 0.190, 0.070, f"{head}\n{detail}", face=COLORS["green_light"], edge=COLORS["green"], fontsize=5.0, weight="bold")
+    _box(ax, 0.16, 0.004, 0.68, 0.058, "Post-hoc diagnostics are not optimization objectives\nPublication filter includes an instance only when every required\nmethod and seed output is complete", face=COLORS["red_light"], edge=COLORS["red"], fontsize=5.2, weight="bold")
     return fig
 
 
