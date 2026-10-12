@@ -1,68 +1,240 @@
-"""Generate publication-ready methodology figures from the implemented model and configuration."""
+"""Generate explanatory diagrams at the Interact template's final text width.
+
+Only methodology artwork is regenerated; no experiments or result plots run.
+Geometry uses millimetres and typography uses publication-size points.
+"""
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
-import sys
-import textwrap
 from pathlib import Path
 
 import matplotlib as mpl
 mpl.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import FancyArrowPatch, FancyBboxPatch, Rectangle
+from matplotlib.transforms import Bbox
 import yaml
 
-
 ROOT = Path(__file__).resolve().parents[1]
-SRC = ROOT / "src"
-if str(SRC) not in sys.path:
-    sys.path.insert(0, str(SRC))
-
-from agriopt.instances import CATALOG  # noqa: E402
-
-
-WIDTH_MM = 175.0
-MM_TO_IN = 1.0 / 25.4
-COLORS = {
-    "ink": "#263238",
-    "muted": "#607D8B",
-    "line": "#90A4AE",
-    "panel": "#F7F9FA",
-    "blue": "#4477AA",
-    "blue_light": "#DCE8F3",
-    "orange": "#D9822B",
-    "orange_light": "#F8E6D2",
-    "green": "#228833",
-    "green_light": "#DCEEDD",
-    "teal": "#009988",
-    "teal_light": "#D6EFEC",
-    "grey": "#9E9E9E",
-    "grey_light": "#EEEEEE",
-    "red": "#B33A3A",
-    "red_light": "#F4DEDE",
-}
+# interact.cls specifies 34 TeX picas, not the generic 175-mm artwork width.
+WIDTH_MM = 34 * 12 / 72.27 * 25.4
+COLORS = dict(ink="#263238", muted="#586870", line="#A8B2B8",
+              panel="#F5F7F8", blue="#4477AA", blue_light="#E5EDF5",
+              orange="#A55C14", orange_light="#FAEDDF",
+              green="#24783A", green_light="#E6F1E8",
+              teal="#007F73", teal_light="#E1F2EF",
+              grey_light="#F0F1F2")
 
 
-def _configure_style() -> None:
-    mpl.rcParams.update(
-        {
-            "font.family": "serif",
-            "font.serif": ["Times New Roman"],
-            "font.size": 8,
-            "mathtext.fontset": "stix",
-            "axes.linewidth": 0.7,
-            "pdf.fonttype": 42,
-            "ps.fonttype": 42,
-            "svg.fonttype": "none",
-            "savefig.facecolor": "white",
-            "figure.facecolor": "white",
-        }
-    )
+def _configure_style():
+    mpl.rcParams.update({"font.family": "sans-serif", "font.sans-serif": ["Arial", "DejaVu Sans"],
+                         "font.size": 9, "mathtext.fontset": "dejavusans",
+                         "pdf.fonttype": 42, "ps.fonttype": 42, "svg.fonttype": "none",
+                         "figure.facecolor": "white", "savefig.facecolor": "white"})
 
 
-def _publication_run() -> str:
+def _new_canvas(height_mm):
+    fig = plt.figure(figsize=(WIDTH_MM / 25.4, height_mm / 25.4))
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.set(xlim=(0, WIDTH_MM), ylim=(height_mm, 0))
+    ax.set_axis_off()
+    return fig, ax
+
+
+def _text(ax, x, y, label, *, size=9, bold=False, ha="left", va="center", color=None):
+    return ax.text(x, y, label, fontsize=size, weight="bold" if bold else "normal",
+                   ha=ha, va=va, linespacing=1.22, color=color or COLORS["ink"])
+
+
+def _panel(ax, y, marker, label):
+    _text(ax, 1, y, f"{marker}  {label}", size=10, bold=True)
+
+
+def _box(ax, x, y, w, h, label, *, face="panel", edge="line", bold=False, size=9):
+    patch = FancyBboxPatch((x, y), w, h,
+                          boxstyle="round,pad=0,rounding_size=1.1",
+                          linewidth=.75, facecolor=COLORS.get(face, face),
+                          edgecolor=COLORS.get(edge, edge))
+    ax.add_patch(patch)
+    patch._boxed_text = _text(ax, x + w / 2, y + h / 2, label,
+                             size=size, bold=bold, ha="center")
+    patch._layout_box = True
+    return patch
+
+
+def _arrow(ax, start, end, *, color="muted", dashed=False):
+    ax.add_patch(FancyArrowPatch(start, end, arrowstyle="-|>", mutation_scale=8,
+                                linewidth=.85, shrinkA=1.5, shrinkB=1.5,
+                                linestyle="--" if dashed else "-",
+                                color=COLORS.get(color, color)))
+
+
+def _validate_layout(fig):
+    """Reject overflow, text collisions, overlapping boxes and clipped artists."""
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    safety = fig.dpi / 72  # one point of interior clearance
+    for ax in fig.axes:
+        boxes = [p for p in ax.patches if getattr(p, "_layout_box", False)]
+        for p in boxes:
+            outer = p.get_window_extent(renderer)
+            inner = p._boxed_text.get_window_extent(renderer)
+            if (inner.x0 < outer.x0 + safety or inner.x1 > outer.x1 - safety
+                    or inner.y0 < outer.y0 + safety or inner.y1 > outer.y1 - safety):
+                raise ValueError(f"Text overflows box: {p._boxed_text.get_text()!r}")
+        for i, p in enumerate(boxes):
+            for q in boxes[i + 1:]:
+                if p.get_window_extent(renderer).overlaps(q.get_window_extent(renderer)):
+                    raise ValueError("Overlapping diagram boxes")
+        texts = [(t, t.get_window_extent(renderer)) for t in ax.texts]
+        for i, (t, b) in enumerate(texts):
+            if t.get_fontsize() < 9:
+                raise ValueError("Essential text must be at least 9 pt")
+            if b.x0 < 0 or b.y0 < 0 or b.x1 > fig.bbox.x1 or b.y1 > fig.bbox.y1:
+                raise ValueError(f"Text outside canvas: {t.get_text()!r}")
+            for other, c in texts[i + 1:]:
+                if b.overlaps(c):
+                    raise ValueError(f"Text collision: {t.get_text()!r} / {other.get_text()!r}")
+
+
+def _matrix(ax, x, y, title, values, color):
+    w, h = 37, 21
+    _text(ax, x, y - 9, title, bold=True)
+    for c in range(4):
+        _text(ax, x + (c + .5) * w / 4, y - 3, f"S{c+1}", ha="center")
+    for r, row in enumerate(values):
+        _text(ax, x - 1.5, y + (r + .5) * h / 3, f"P{r+1}", ha="right")
+        for c, value in enumerate(row):
+            hit = (r, c) == (0, 0)
+            ax.add_patch(Rectangle((x + c * w / 4, y + r * h / 3), w / 4, h / 3,
+                                   facecolor=COLORS[f"{color}_light"] if hit else "white",
+                                   edgecolor=COLORS[color], linewidth=1.2 if hit else .5))
+            _text(ax, x + (c + .5) * w / 4, y + (r + .5) * h / 3,
+                  value, ha="center", bold=hit)
+
+
+def figure_chromosome(names=None):
+    fig, ax = _new_canvas(170)
+    _panel(ax, 3, "(a)", "Aligned genes: production plots × slots")
+    crops = [["k2", "k5", "−1", "k1"], ["k3", "k2", "k7", "−1"], ["k5", "k5", "k1", "k4"]]
+    waits = [["1", "0", "2", "1"], ["0", "2", "1", "0"], ["1", "3", "0", "2"]]
+    areas = [["0.65", "0.80", "0.00", "0.35"], ["0.55", "0.70", "0.45", "0.00"], ["0.60", "0.40", "0.75", "0.50"]]
+    for x, title, values, color in [(6, "Crop index", crops, "blue"),
+                                    (54, "Wait (weeks)", waits, "orange"),
+                                    (102, "Area fraction [0, 1]", areas, "green")]:
+        _matrix(ax, x, 21, title, values, color)
+    _text(ax, 1, 47, "P: plot; S: slot; k: crop index; −1: unused slot")
+    _box(ax, 1, 52, WIDTH_MM - 2, 10,
+         "Highlighted slot: crop k2 · wait 1 week · area fraction 0.65", bold=True)
+
+    _panel(ax, 69, "(b)", "Deterministic decoding")
+    xs, w = [1, 50, 99], 41
+    labels = ["1  Eligibility\nSupported plot–crop pair",
+              "2  Earliest start\nPrevious harvest + setup\n+ family recovery",
+              "3  Sowing date\nEarliest start + wait\nNext allowed sowing week",
+              "4  Harvest date\nSowing + maturity",
+              "5  Area and output\nFraction × plot area\nYield × cultivated area",
+              "6  Production event\nPlot, crop, dates and area"]
+    for x, label in zip(xs, labels[:3]):
+        _box(ax, x, 75, w, 17, label, face="blue_light", edge="blue")
+    for x, label in zip(xs[::-1], labels[3:]):
+        _box(ax, x, 98, w, 19, label, face="green_light", edge="green")
+    for a, b in zip(xs[:-1], xs[1:]):
+        _arrow(ax, (a + w, 83.5), (b, 83.5))
+    _arrow(ax, (119.5, 92), (119.5, 98))
+    _arrow(ax, (99, 107.5), (91, 107.5))
+    _arrow(ax, (50, 107.5), (42, 107.5))
+    # Rejection criteria are a single note, not a second layer of branches.
+    _text(ax, 1, 122, "Skip unused or infeasible slots; require harvest within the horizon and positive output.")
+    _panel(ax, 129, "(c)", "Illustrative schedule (not an optimization result)")
+    # Compact schematic retains the original illustrative dates; no empirical data.
+    x0, span = 20, 120
+    schedules = [(0, 2, 13, "White maize", "blue"), (0, 18, 32, "Potato", "orange"),
+                 (1, 7, 19, "Green pea", "teal"), (1, 24, 37, "White maize", "blue"),
+                 (2, 1, 16, "Potato", "orange"), (2, 23, 41, "Cassava", "green")]
+    for i, y in enumerate([137, 146, 155]):
+        _text(ax, 1, y + 3, f"Plot {i+1}")
+        ax.plot([x0, x0 + span], [y + 3, y + 3], color=COLORS["line"], lw=.5, zorder=0)
+    for plot, start, end, label, color in schedules:
+        x, w = x0 + span * start / 52, span * (end-start) / 52
+        y = [137, 146, 155][plot]
+        ax.add_patch(Rectangle((x, y), w, 6, facecolor=COLORS[f"{color}_light"],
+                               edgecolor=COLORS[color], linewidth=.7))
+        _text(ax, x + w/2, y + 3, label, ha="center")
+    for week in [0, 13, 26, 39, 52]:
+        _text(ax, x0 + span * week/52, 164, str(week), ha="center")
+    _text(ax, 1, 164, "Week")
+    return fig
+
+
+def figure_variants(config):
+    ecfg = config["experiment"]
+    pop, gens = int(ecfg["nsga2"]["population"]), int(ecfg["nsga2"]["generations"])
+    hcfg = ecfg["hybrid"]
+    budget = max(1, math.ceil(pop * float(hcfg["refinement_fraction"])))
+    explore = max(1, round(float(hcfg.get("exploration_share", .20)) * budget))
+    fig, ax = _new_canvas(154)
+    _panel(ax, 3, "(a)", "Shared evolutionary generation")
+    labels = ["Population\n$P_t$", "Tournament\nselection", "Crossover\nand mutation", "Decode and\nevaluate offspring"]
+    xs, w = [1, 38, 75, 112], 30
+    for x, label in zip(xs, labels):
+        _box(ax, x, 9, w, 14, label)
+    for a, b in zip(xs[:-1], xs[1:]):
+        _arrow(ax, (a+w, 16), (b, 16))
+    _panel(ax, 30, "(b)", "Refinement allocation")
+    rows = [(36, "NSGA-II", "No SLSQP calls\nRetain decoded cultivated areas", "grey_light", "muted"),
+            (56, "NSGA-II\n+ full refinement", f"Refine every offspring\n{pop} calls per generation; {pop*gens:,} per run", "orange_light", "orange"),
+            (76, "H-NSGA-II", f"Refine {budget} of {pop} offspring ({budget/pop:.0%})\n{budget*gens:,} calls per run", "teal_light", "teal")]
+    for y, title, detail, face, edge in rows:
+        _box(ax, 1, y, 40, 16, title, face=face, edge=edge, bold=True)
+        _box(ax, 47, y, WIDTH_MM-48, 16, detail, face="white", edge=edge)
+        _arrow(ax, (41, y+8), (47, y+8), color=edge)
+    _text(ax, 1, 99, f"H-NSGA-II: random selection for the first {hcfg['warmup_generations']} generations; train after ≥{hcfg['min_training_samples']} gains.")
+    _text(ax, 1, 105, f"Extra Trees ranks predicted gains: {budget-explore} ranked + {explore} random candidates per generation.")
+    _text(ax, 1, 111, f"Observed gains update the predictor every {hcfg.get('retrain_every', 2)} generations; objectives are not predicted.")
+    _box(ax, 1, 118, WIDTH_MM-2, 17,
+         "Both refined variants: fix crops and dates; optimize areas with SLSQP.\nAccept successful refinements only if revenue is preserved and risk does not rise.")
+    _panel(ax, 141, "(c)", "Shared survival using true objectives")
+    _text(ax, 1, 148, "Parents + offspring → nondominated sorting → crowding distance → next population")
+    return fig
+
+
+def figure_workflow(snapshot, config):
+    ecfg = config["experiment"]
+    included = snapshot["included_complete_instances"]
+    excluded = [i for i in ecfg["instances"] if i not in included]
+    short = lambda items: ", ".join(i.split("_")[0] for i in items)
+    fig, ax = _new_canvas(144)
+    _panel(ax, 3, "1", "Empirical inputs")
+    specs = [(1, "Productivity\nMunicipality, crop and yield"),
+             (50, "Wholesale prices\nSIPSA data and forecasts"),
+             (99, "Agronomic inputs\nCalendars and maturity")]
+    for x, text in specs:
+        _box(ax, x, 9, 41, 15, text, face="blue_light", edge="blue")
+    _arrow(ax, (WIDTH_MM/2, 24), (WIDTH_MM/2, 29), color="blue")
+    _panel(ax, 32, "2", "Data-informed synthetic benchmarks")
+    _box(ax, 1, 38, WIDTH_MM-2, 17,
+         f"{len(ecfg['instances'])} designed instances; {len(included)} meet the completeness rule\nIncluded: {short(included)} · Incomplete: {short(excluded) or 'none'}", face="panel")
+    _arrow(ax, (WIDTH_MM/2, 55), (WIDTH_MM/2, 60), color="blue")
+    _panel(ax, 63, "3", "Solution methods")
+    specs = [(1, 69, f"SCIP ε-constraint\n{ecfg['exact']['points']} revenue thresholds", "blue_light", "blue"),
+             (75, 69, "NSGA-II\nNo area refinement", "grey_light", "muted"),
+             (1, 88, "NSGA-II + full refinement\nSLSQP for every offspring", "orange_light", "orange"),
+             (75, 88, f"H-NSGA-II\nSLSQP for {ecfg['hybrid']['refinement_fraction']:.0%} of offspring", "teal_light", "teal")]
+    for x, y, text, face, edge in specs:
+        _box(ax, x, y, 66, 15, text, face=face, edge=edge)
+    _text(ax, 1, 110, f"Evolutionary methods: matched initialization · {len(ecfg['seeds'])} seeds · {ecfg['nsga2']['population']} candidates · {ecfg['nsga2']['generations']} generations")
+    _panel(ax, 118, "4", "Evaluation after all required runs are complete")
+    _text(ax, 1, 125, r"Pareto quality: pooled reference, HV, IGD$^+$ and ε; paired Wilcoxon–Holm tests")
+    _text(ax, 1, 132, "Computational effort: runtime, refinement calls, refinement time and useful-call rate")
+    _text(ax, 1, 139, "Diagnostics: utilization, occupancy and idle weeks; SCIP status and optimality gap")
+    return fig
+
+
+def _publication_run():
     manuscript = ROOT / "paper" / "main.tex"
     if manuscript.exists():
         match = re.search(r"results/([A-Za-z0-9_.\\-]+)", manuscript.read_text(encoding="utf-8"))
@@ -71,433 +243,55 @@ def _publication_run() -> str:
     return "publication_slsqp_test"
 
 
-def _load_context(run: str) -> tuple[dict, dict, dict[str, str]]:
-    snapshot_path = ROOT / "artifacts" / run / "paper_snapshot.json"
-    if not snapshot_path.exists():
-        raise FileNotFoundError(f"Publication snapshot not found: {snapshot_path}")
-    snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
-    config_path = ROOT / snapshot.get("configuration_path", "configs/publication_slsqp.yaml")
-    if not config_path.exists():
-        raise FileNotFoundError(f"Publication configuration not found: {config_path}")
-    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    names_path = ROOT / "configs" / "product_names_en.yaml"
-    if not names_path.exists():
-        raise FileNotFoundError(f"English product-name mapping not found: {names_path}")
-    names = yaml.safe_load(names_path.read_text(encoding="utf-8"))
-    return snapshot, config, names
+def _load_context(run):
+    snapshot = json.loads((ROOT / "artifacts" / run / "paper_snapshot.json").read_text(encoding="utf-8"))
+    config = yaml.safe_load((ROOT / snapshot.get("configuration_path", "configs/publication_slsqp.yaml")).read_text(encoding="utf-8"))
+    return snapshot, config
 
 
-def _wrap(text: str, width: int) -> str:
-    return "\n".join(textwrap.wrap(text, width=width, break_long_words=False))
-
-
-def _box(
-    ax,
-    x: float,
-    y: float,
-    w: float,
-    h: float,
-    text: str,
-    *,
-    face: str = "white",
-    edge: str = COLORS["line"],
-    lw: float = 0.9,
-    fontsize: float = 7.2,
-    weight: str = "normal",
-    align: str = "center",
-    zorder: int = 2,
-    rounding: float = 0.008,
-) -> FancyBboxPatch:
-    patch = FancyBboxPatch(
-        (x, y),
-        w,
-        h,
-        boxstyle=f"round,pad=0.006,rounding_size={rounding}",
-        facecolor=face,
-        edgecolor=edge,
-        linewidth=lw,
-        transform=ax.transAxes,
-        clip_on=False,
-        zorder=zorder,
-    )
-    ax.add_patch(patch)
-    tx = x + (w / 2 if align == "center" else 0.012)
-    text_artist = ax.text(
-        tx,
-        y + h / 2,
-        text,
-        transform=ax.transAxes,
-        ha=align,
-        va="center",
-        fontsize=fontsize,
-        color=COLORS["ink"],
-        weight=weight,
-        linespacing=1.18,
-        zorder=zorder + 1,
-    )
-    patch._boxed_text = text_artist
-    return patch
-
-
-def _arrow(
-    ax,
-    start: tuple[float, float],
-    end: tuple[float, float],
-    *,
-    color: str = COLORS["muted"],
-    lw: float = 1.0,
-    style: str = "-|>",
-    connectionstyle: str = "arc3,rad=0",
-    dashed: bool = False,
-    zorder: int = 1,
-) -> None:
-    arrow = FancyArrowPatch(
-        start,
-        end,
-        arrowstyle=style,
-        mutation_scale=8,
-        linewidth=lw,
-        color=color,
-        linestyle="--" if dashed else "-",
-        connectionstyle=connectionstyle,
-        transform=ax.transAxes,
-        clip_on=False,
-        zorder=zorder,
-    )
-    ax.add_patch(arrow)
-
-
-def _panel_label(ax, x: float, y: float, label: str, title: str) -> None:
-    ax.text(x, y, label, transform=ax.transAxes, ha="left", va="top", fontsize=9.5, weight="bold", color=COLORS["ink"])
-    ax.text(x + 0.043, y, title, transform=ax.transAxes, ha="left", va="top", fontsize=8.5, weight="bold", color=COLORS["ink"])
-
-
-def _validate_box_text(fig: plt.Figure, padding_pt: float = 1.0) -> None:
-    """Fail generation whenever boxed text exceeds its visible container."""
-    fig.canvas.draw()
+def _save(fig, stem, paper_dir, artifact_dir):
+    _validate_layout(fig)
     renderer = fig.canvas.get_renderer()
-    padding_px = fig.dpi * padding_pt / 72.0
-    violations: list[str] = []
-    for ax in fig.axes:
-        for patch in ax.patches:
-            text_artist = getattr(patch, "_boxed_text", None)
-            if text_artist is None:
-                continue
-            patch_bbox = patch.get_window_extent(renderer)
-            text_bbox = text_artist.get_window_extent(renderer)
-            if (
-                text_bbox.x0 < patch_bbox.x0 + padding_px
-                or text_bbox.x1 > patch_bbox.x1 - padding_px
-                or text_bbox.y0 < patch_bbox.y0 + padding_px
-                or text_bbox.y1 > patch_bbox.y1 - padding_px
-            ):
-                violations.append(text_artist.get_text().replace("\n", " / "))
-    if violations:
-        details = "\n- ".join(violations)
-        raise ValueError(f"Boxed text overflow detected:\n- {details}")
-
-
-def _draw_matrix(
-    ax,
-    x: float,
-    y: float,
-    w: float,
-    h: float,
-    title: str,
-    values: list[list[str]],
-    face: str,
-    edge: str,
-    note: str,
-    highlight: tuple[int, int] = (0, 0),
-) -> None:
-    rows, cols = len(values), len(values[0])
-    ax.text(x, y + h + 0.034, title, transform=ax.transAxes, ha="left", va="bottom", fontsize=8.2, weight="bold", color=COLORS["ink"])
-    cw, ch = w / cols, h / rows
-    for r in range(rows):
-        ax.text(x - 0.008, y + h - (r + 0.5) * ch, f"L{r + 1}", transform=ax.transAxes, ha="right", va="center", fontsize=6.8, color=COLORS["muted"])
-        for c in range(cols):
-            is_highlight = (r, c) == highlight
-            rect = Rectangle(
-                (x + c * cw, y + h - (r + 1) * ch),
-                cw,
-                ch,
-                transform=ax.transAxes,
-                facecolor="white" if not is_highlight else face,
-                edgecolor=edge,
-                linewidth=1.6 if is_highlight else 0.65,
-            )
-            ax.add_patch(rect)
-            ax.text(x + (c + 0.5) * cw, y + h - (r + 0.5) * ch, values[r][c], transform=ax.transAxes, ha="center", va="center", fontsize=6.8, color=COLORS["ink"], weight="bold" if is_highlight else "normal")
-    for c in range(cols):
-        ax.text(x + (c + 0.5) * cw, y + h + 0.008, f"S{c + 1}", transform=ax.transAxes, ha="center", va="bottom", fontsize=6.6, color=COLORS["muted"])
-    ax.text(x, y - 0.022, note, transform=ax.transAxes, ha="left", va="top", fontsize=6.6, color=COLORS["muted"])
-
-
-def figure_chromosome(names: dict[str, str]) -> plt.Figure:
-    fig, ax = plt.subplots(figsize=(WIDTH_MM * MM_TO_IN, 210 * MM_TO_IN))
-    ax.set_axis_off()
-    _panel_label(ax, 0.02, 0.98, "(a)", "Three aligned L x S gene matrices (illustrative 3 lots x 4 slots)")
-
-    crops = [["k2", "k5", "-1", "k1"], ["k3", "k2", "k7", "-1"], ["k5", "k5", "k1", "k4"]]
-    waits = [["1", "0", "2", "1"], ["0", "2", "1", "0"], ["1", "3", "0", "2"]]
-    areas = [["0.65", "0.80", "0.00", "0.35"], ["0.55", "0.70", "0.45", "0.00"], ["0.60", "0.40", "0.75", "0.50"]]
-    _draw_matrix(ax, 0.055, 0.755, 0.245, 0.14, r"Crop index  $crops[l,s]$", crops, COLORS["blue_light"], COLORS["blue"], "-1 unused; k internal crop index")
-    _draw_matrix(ax, 0.375, 0.755, 0.245, 0.14, r"Waiting weeks  $waits[l,s]$", waits, COLORS["orange_light"], COLORS["orange"], "Integer delay after earliest start")
-    _draw_matrix(ax, 0.695, 0.755, 0.245, 0.14, r"Area fraction  $area\_frac[l,s]$", areas, COLORS["green_light"], COLORS["green"], "Continuous [0,1]; area = lot area x fraction")
-
-    gene_text = "Highlighted slot\nk2  |  wait 1 week  |  fraction 0.65"
-    _box(ax, 0.03, 0.65, 0.445, 0.06, gene_text, face=COLORS["panel"], edge=COLORS["ink"], fontsize=6.3, weight="bold")
-    _arrow(ax, (0.475, 0.68), (0.525, 0.68))
-    _box(ax, 0.525, 0.65, 0.445, 0.06, "Internal indices\nEnglish crop names appear after decoding", face="white", edge=COLORS["line"], fontsize=5.9)
-
-    _panel_label(ax, 0.02, 0.625, "(b)", "Deterministic genotype-to-phenotype decoder")
-    steps = [
-        ("Eligibility", "Supported pair\naccepted"),
-        ("Earliest start", "Previous harvest\n+ setup\n+ family recovery"),
-        ("Planting", "Earliest + wait\nNext allowed\nsowing week"),
-        ("Harvest", "Sow week\n+ maturity"),
-        ("Quantities", "Area = lot area\nx fraction\nOutput = yield\nx area"),
-        ("Event", "lot, crop\nsow, harvest\narea"),
-    ]
-    top_xs = [0.05, 0.365, 0.68]
-    bottom_xs = [0.68, 0.365, 0.05]
-    box_w = 0.27
-    branch_w = 0.21
-
-    for i, ((heading, detail), x) in enumerate(zip(steps[:3], top_xs)):
-        face = COLORS["blue_light"] if i in {0, 2, 3} else COLORS["green_light"] if i >= 4 else COLORS["panel"]
-        edge = COLORS["blue"] if i in {0, 2, 3} else COLORS["green"] if i >= 4 else COLORS["line"]
-        _box(ax, x, 0.490, box_w, 0.100, f"{heading}\n{detail}", face=face, edge=edge, fontsize=6.5, weight="bold" if i == 0 else "normal")
-        if i < 2:
-            _arrow(ax, (x + box_w, 0.540), (top_xs[i + 1], 0.540))
-
-    for offset, ((heading, detail), x) in enumerate(zip(steps[3:], bottom_xs), start=3):
-        face = COLORS["blue_light"] if offset == 3 else COLORS["green_light"]
-        edge = COLORS["blue"] if offset == 3 else COLORS["green"]
-        _box(ax, x, 0.305, box_w, 0.100, f"{heading}\n{detail}", face=face, edge=edge, fontsize=6.5, weight="bold" if offset == 5 else "normal")
-        if offset < 5:
-            next_x = bottom_xs[offset - 2]
-            _arrow(ax, (x, 0.355), (next_x + box_w, 0.355))
-
-    ax.plot([0.95, 0.985, 0.985], [0.540, 0.540, 0.355], transform=ax.transAxes, color=COLORS["muted"], lw=1.0, clip_on=False)
-    _arrow(ax, (0.985, 0.355), (0.95, 0.355), color=COLORS["muted"])
-
-    branch_texts = [
-        "skip:\nunused slot",
-        "skip:\nineligible",
-        "skip:\nno sow week",
-        "skip:\nlate harvest",
-        "skip:\nyield <= 0",
-        "Optional demand\ncap inactive here",
-    ]
-    for x, text in zip(top_xs, branch_texts[:3]):
-        branch_x = x + (box_w - branch_w) / 2
-        _arrow(ax, (x + box_w / 2, 0.490), (x + box_w / 2, 0.473), color=COLORS["grey"], dashed=True)
-        _box(ax, branch_x, 0.425, branch_w, 0.043, text, face=COLORS["grey_light"], edge=COLORS["grey"], fontsize=5.8)
-
-    for x, text in zip(bottom_xs, branch_texts[3:]):
-        branch_x = x + (box_w - branch_w) / 2
-        _arrow(ax, (x + box_w / 2, 0.305), (x + box_w / 2, 0.288), color=COLORS["grey"], dashed=True)
-        _box(ax, branch_x, 0.240, branch_w, 0.043, text, face=COLORS["grey_light"], edge=COLORS["grey"], fontsize=5.8)
-
-    _panel_label(ax, 0.02, 0.205, "(c)", "Decoded phenotype: sowing and harvest dates emerge from the decoder")
-    gantt_x0, gantt_x1 = 0.16, 0.96
-    gantt_y = [0.145, 0.095, 0.045]
-    weeks = 52
-    for tick in [0, 13, 26, 39, 52]:
-        x = gantt_x0 + (gantt_x1 - gantt_x0) * tick / weeks
-        ax.plot([x, x], [0.028, 0.165], transform=ax.transAxes, color="#E3E7E9", lw=0.6, zorder=0)
-        ax.text(x, 0.020, str(tick), transform=ax.transAxes, ha="center", va="top", fontsize=6.8, color=COLORS["muted"])
-    ax.text((gantt_x0 + gantt_x1) / 2, 0.001, "Planning week", transform=ax.transAxes, ha="center", va="bottom", fontsize=7.5, color=COLORS["ink"])
-    for i, y in enumerate(gantt_y, 1):
-        ax.text(0.13, y, f"Lot {i}", transform=ax.transAxes, ha="right", va="center", fontsize=7.5, color=COLORS["ink"])
-        ax.plot([gantt_x0, gantt_x1], [y, y], transform=ax.transAxes, color="#CFD8DC", lw=0.7, zorder=0)
-    schedules = [
-        (0, 2, 13, "White maize", COLORS["blue"]), (0, 18, 32, "Potato", COLORS["orange"]),
-        (1, 7, 19, "Green pea", COLORS["teal"]), (1, 24, 37, "White maize", COLORS["blue"]),
-        (2, 1, 16, "Potato", COLORS["orange"]), (2, 23, 41, "Cassava", COLORS["green"]),
-    ]
-    for lot, start, end, label, color in schedules:
-        x = gantt_x0 + (gantt_x1 - gantt_x0) * start / weeks
-        w = (gantt_x1 - gantt_x0) * (end - start) / weeks
-        y = gantt_y[lot] - 0.020
-        ax.add_patch(Rectangle((x, y), w, 0.040, transform=ax.transAxes, facecolor=color, edgecolor=COLORS["ink"], linewidth=0.5))
-        ax.text(x + w / 2, gantt_y[lot], label, transform=ax.transAxes, ha="center", va="center", fontsize=7.8, color="white", weight="bold")
-    ax.text(0.98, 0.177, "Illustrative encoding; not an empirical solution", transform=ax.transAxes, ha="right", va="bottom", fontsize=5.8, style="italic", color=COLORS["muted"])
-    return fig
-
-
-def figure_variants(config: dict) -> plt.Figure:
-    ecfg = config["experiment"]
-    pop = int(ecfg["nsga2"]["population"])
-    generations = int(ecfg["nsga2"]["generations"])
-    hcfg = ecfg["hybrid"]
-    budget = int(round(pop * float(hcfg["refinement_fraction"])))
-    explore = max(1, int(round(0.20 * budget)))
-    exploit = budget - explore
-    fig, ax = plt.subplots(figsize=(WIDTH_MM * MM_TO_IN, 245 * MM_TO_IN))
-    ax.set_axis_off()
-
-    _panel_label(ax, 0.02, 0.985, "(a)", "Shared evolutionary generation")
-    shared = ["Population\n$P_t$", "Binary\ntournament", "Crossover", "Mutation", "Decode\noffspring", "True income\nand risk"]
-    sx = [0.02, 0.18, 0.34, 0.50, 0.66, 0.82]
-    shared_w = 0.14
-    for i, (label, x) in enumerate(zip(shared, sx)):
-        _box(ax, x, 0.885, shared_w, 0.058, label, face=COLORS["panel"], edge=COLORS["ink"] if i in {0, 5} else COLORS["line"], fontsize=6.6, weight="bold" if i in {0, 5} else "normal")
-        if i < len(shared) - 1:
-            _arrow(ax, (x + shared_w, 0.914), (sx[i + 1], 0.914))
-    ax.text(0.5, 0.848, "Shared decision semantics and variation mechanics; initialization details are deliberately omitted", transform=ax.transAxes, ha="center", va="center", fontsize=6.3, color=COLORS["muted"], style="italic")
-
-    _panel_label(ax, 0.02, 0.820, "(b)", "Alternative allocation of conditional continuous area refinement")
-    columns = [0.025, 0.35, 0.675]
-    col_w = 0.30
-    headers = [
-        ("NSGA-II baseline", COLORS["grey_light"], COLORS["muted"]),
-        ("NSGA-II + full SLSQP\nrefinement", COLORS["orange_light"], COLORS["orange"]),
-        ("Surrogate-guided\nH-NSGA-II", COLORS["teal_light"], COLORS["teal"]),
-    ]
-    for x, (title, face, edge) in zip(columns, headers):
-        _box(ax, x, 0.700, col_w, 0.062, title, face=face, edge=edge, fontsize=6.5, weight="bold")
-
-    _box(ax, 0.04, 0.545, 0.27, 0.125, "No continuous\nmathematical refinement\n\nDecoded values remain\nthe final true objectives", face="white", edge=COLORS["muted"], fontsize=6.6)
-    _box(ax, 0.04, 0.475, 0.27, 0.052, "0 refinement calls\nper generation", face=COLORS["grey_light"], edge=COLORS["grey"], fontsize=6.1, weight="bold")
-
-    _box(ax, 0.365, 0.60, 0.27, 0.085, "All offspring\nConditional area problem\nSLSQP", face="white", edge=COLORS["orange"], fontsize=6.5, weight="bold")
-    _arrow(ax, (0.50, 0.60), (0.50, 0.565), color=COLORS["orange"])
-    _box(ax, 0.365, 0.47, 0.27, 0.09, "Accept only when:\nSLSQP succeeds\nincome is preserved\nrisk does not worsen", face=COLORS["orange_light"], edge=COLORS["orange"], fontsize=6.2)
-    _box(ax, 0.365, 0.400, 0.27, 0.052, f"{pop} x {generations}\n= {pop * generations:,} potential calls", face="white", edge=COLORS["orange"], fontsize=6.0, weight="bold")
-
-    _box(ax, 0.69, 0.628, 0.27, 0.057, f"Budget: {budget} of {pop}\n({100 * budget / pop:.0f}% of offspring)", face="white", edge=COLORS["teal"], fontsize=6.2, weight="bold")
-    _box(ax, 0.69, 0.555, 0.27, 0.06, f"Warm-up: random budget\nfor {int(hcfg['warmup_generations'])} generations or until\n{int(hcfg['min_training_samples'])} realized gains exist", face=COLORS["teal_light"], edge=COLORS["teal"], fontsize=6.0)
-    _box(ax, 0.69, 0.462, 0.27, 0.073, f"Active gate\n{exploit} predicted-gain candidates\n+ {explore} random candidates", face="white", edge=COLORS["teal"], fontsize=5.9, weight="bold")
-    _box(ax, 0.69, 0.385, 0.27, 0.065, "Grouped features -> Extra Trees\nSchedule | resource use\nAgronomic-economic | solution state\nSearch progress", face=COLORS["teal_light"], edge=COLORS["teal"], fontsize=5.2)
-    _box(ax, 0.69, 0.312, 0.27, 0.050, "Gate, not an\nobjective surrogate", face=COLORS["red_light"], edge=COLORS["red"], fontsize=6.0, weight="bold")
-
-    _box(ax, 0.365, 0.285, 0.27, 0.095, "Continuous subproblem\nFix crop, order, and dates\nReoptimize cultivated areas\nto minimize quadratic risk\nAccepted result updates true values", face=COLORS["panel"], edge=COLORS["ink"], fontsize=5.6)
-    _arrow(ax, (0.635, 0.34), (0.69, 0.34), color=COLORS["teal"], dashed=True)
-
-    _box(ax, 0.69, 0.240, 0.27, 0.055, "Observed gain\nrelative risk improvement\n+ relative income improvement", face="white", edge=COLORS["teal"], fontsize=5.2)
-    _arrow(ax, (0.825, 0.32), (0.825, 0.298), color=COLORS["teal"])
-    ax.text(0.82, 0.222, "Append observations; retrain every 2 generations", transform=ax.transAxes, ha="center", va="center", fontsize=5.1, color=COLORS["teal"])
-
-    _panel_label(ax, 0.02, 0.17, "(c)", "Shared Pareto survival mechanism")
-    survival = ["Parents +\nprocessed offspring", "Fast nondominated\nsorting", "Crowding\ndistance", "Environmental\nselection", "$P_{t+1}$"]
-    bx = [0.02, 0.215, 0.410, 0.605, 0.800]
-    survival_w = 0.18
-    for i, (label, x) in enumerate(zip(survival, bx)):
-        _box(ax, x, 0.060, survival_w, 0.060, label, face=COLORS["blue_light"] if i == len(survival) - 1 else COLORS["panel"], edge=COLORS["blue"] if i == len(survival) - 1 else COLORS["line"], fontsize=5.5, weight="bold" if i in {0, 4} else "normal")
-        if i < len(survival) - 1:
-            _arrow(ax, (x + survival_w, 0.090), (bx[i + 1], 0.090))
-    ax.text(0.5, 0.018, "Selection and archive membership use true decoded or SLSQP-refined objectives", transform=ax.transAxes, ha="center", va="center", fontsize=5.8, color=COLORS["ink"], weight="bold")
-    return fig
-
-
-def figure_workflow(snapshot: dict, config: dict) -> plt.Figure:
-    ecfg = config["experiment"]
-    included = set(snapshot["included_complete_instances"])
-    fig, ax = plt.subplots(figsize=(WIDTH_MM * MM_TO_IN, 235 * MM_TO_IN))
-    ax.set_axis_off()
-
-    ax.text(0.02, 0.98, "1", transform=ax.transAxes, ha="left", va="top", fontsize=10, weight="bold", color=COLORS["blue"])
-    ax.text(0.055, 0.98, "Materials and empirical inputs", transform=ax.transAxes, ha="left", va="top", fontsize=8.8, weight="bold", color=COLORS["ink"])
-    inputs = [
-        (0.03, "Productivity evidence", "Municipality | crop\nplanting month | yield"),
-        (0.35, "Wholesale prices", "DANE SIPSA weekly series\nand 104-week forecast"),
-        (0.67, "Agronomic parameters", "Maturity | botanical family\nsowing feasibility"),
-    ]
-    for x, head, detail in inputs:
-        _box(ax, x, 0.865, 0.29, 0.075, f"{head}\n{detail}", face=COLORS["blue_light"], edge=COLORS["blue"], fontsize=7.0, weight="bold")
-    _box(ax, 0.69, 0.808, 0.27, 0.042, "Optional demand cap\ninactive in reported experiment", face=COLORS["grey_light"], edge=COLORS["grey"], fontsize=5.6)
-    _arrow(ax, (0.50, 0.815), (0.50, 0.775), color=COLORS["blue"])
-
-    ax.text(0.02, 0.78, "2", transform=ax.transAxes, ha="left", va="top", fontsize=10, weight="bold", color=COLORS["blue"])
-    ax.text(0.055, 0.78, "Configured benchmark ladder and publication-complete snapshot", transform=ax.transAxes, ha="left", va="top", fontsize=8.8, weight="bold", color=COLORS["ink"])
-    catalog = CATALOG.copy()
-    cell_w, cell_h = 0.232, 0.082
-    for idx, row in catalog.iterrows():
-        rr, cc = divmod(idx, 4)
-        x, y = 0.025 + cc * 0.242, 0.655 - rr * 0.094
-        complete = row["instance"] in included
-        face = COLORS["blue_light"] if complete else COLORS["grey_light"]
-        edge = COLORS["blue"] if complete else COLORS["grey"]
-        status = "publication-complete" if complete else "configured; incomplete"
-        label = f"{row['instance']}\n{int(row['farms'])} farms | {int(row['lots'])} lots\n{int(row['products'])} crops | {int(row['horizon_weeks'])} weeks\n{status}"
-        _box(ax, x, y, cell_w, cell_h, label, face=face, edge=edge, fontsize=6.0, weight="bold" if complete else "normal")
-    _box(ax, 0.10, 0.515, 0.80, 0.032, "Construction adds lot areas, municipalities, eligibility, yield tensors, forecast prices, and covariance", face=COLORS["panel"], edge=COLORS["line"], fontsize=5.8)
-    _arrow(ax, (0.50, 0.515), (0.50, 0.490), color=COLORS["blue"])
-
-    ax.text(0.02, 0.49, "3", transform=ax.transAxes, ha="left", va="top", fontsize=10, weight="bold", color=COLORS["blue"])
-    ax.text(0.055, 0.49, "Solution methods", transform=ax.transAxes, ha="left", va="top", fontsize=8.8, weight="bold", color=COLORS["ink"])
-    method_specs = [
-        (0.025, "Exact epsilon-constraint\nSCIP", "I01-I04\n11 income thresholds", COLORS["blue_light"], COLORS["blue"]),
-        (0.267, "NSGA-II", "No continuous\nrefinement", COLORS["grey_light"], COLORS["muted"]),
-        (0.509, "NSGA-II + full SLSQP", "Every offspring\nrefined", COLORS["orange_light"], COLORS["orange"]),
-        (0.751, "Surrogate-guided\nH-NSGA-II", "25% refinement\nbudget", COLORS["teal_light"], COLORS["teal"]),
-    ]
-    for x, head, detail, face, edge in method_specs:
-        _box(ax, x, 0.385, 0.224, 0.072, f"{head}\n{detail}", face=face, edge=edge, fontsize=5.8, weight="bold")
-    seeds = ecfg["seeds"]
-    pop = int(ecfg["nsga2"]["population"])
-    gens = int(ecfg["nsga2"]["generations"])
-    ax.text(0.63, 0.365, f"Stochastic methods: matched seeds {min(seeds)}-{max(seeds)} | population {pop} | {gens} generations", transform=ax.transAxes, ha="center", va="center", fontsize=6.1, color=COLORS["ink"], weight="bold")
-    _arrow(ax, (0.50, 0.350), (0.50, 0.325), color=COLORS["blue"])
-
-    ax.text(0.02, 0.335, "4", transform=ax.transAxes, ha="left", va="top", fontsize=10, weight="bold", color=COLORS["blue"])
-    ax.text(0.055, 0.335, "Controlled comparison", transform=ax.transAxes, ha="left", va="top", fontsize=8.8, weight="bold", color=COLORS["ink"])
-    _box(ax, 0.12, 0.255, 0.76, 0.052, "Same instance and economic-agronomic inputs\nSame chromosome semantics, matched seeds, and matched evolutionary budgets", face=COLORS["panel"], edge=COLORS["ink"], fontsize=6.0, weight="bold")
-    _box(ax, 0.20, 0.195, 0.60, 0.045, "Primary contrast\nNo refinement  vs  full refinement  vs  surrogate-gated refinement", face="white", edge=COLORS["teal"], fontsize=5.8, weight="bold")
-    _arrow(ax, (0.50, 0.190), (0.50, 0.170), color=COLORS["blue"])
-
-    ax.text(0.02, 0.170, "5", transform=ax.transAxes, ha="left", va="top", fontsize=10, weight="bold", color=COLORS["blue"])
-    ax.text(0.055, 0.170, "Post-hoc evaluation and reporting filter", transform=ax.transAxes, ha="left", va="top", fontsize=8.8, weight="bold", color=COLORS["ink"])
-    eval_specs = [
-        (0.015, "Pareto quality", "Normalized HV | IGD+\nAdditive epsilon\nNondominated points"),
-        (0.210, "Computational effort", "Runtime | calls\nCumulative\nrefinement time"),
-        (0.405, "Refinement effectiveness", "Useful-refinement\nhit rate"),
-        (0.600, "Operational diagnostics", "Space-time utilization\nLot temporal occupancy\nMean idle weeks"),
-        (0.795, "Exact-reference evidence", "SCIP status | gap\nruntime"),
-    ]
-    for x, head, detail in eval_specs:
-        _box(ax, x, 0.075, 0.190, 0.070, f"{head}\n{detail}", face=COLORS["green_light"], edge=COLORS["green"], fontsize=5.0, weight="bold")
-    _box(ax, 0.16, 0.004, 0.68, 0.058, "Post-hoc diagnostics are not optimization objectives\nPublication filter includes an instance only when every required\nmethod and seed output is complete", face=COLORS["red_light"], edge=COLORS["red"], fontsize=5.2, weight="bold")
-    return fig
-
-
-def _save(fig: plt.Figure, stem: str, paper_dir: Path, artifact_dir: Path) -> list[Path]:
-    _validate_box_text(fig)
-    paper_dir.mkdir(parents=True, exist_ok=True)
-    artifact_dir.mkdir(parents=True, exist_ok=True)
-    outputs: list[Path] = []
-    for ext in ("pdf", "svg", "png"):
-        targets = [artifact_dir / f"{stem}.{ext}"]
-        if ext == "pdf":
+    artists = [a for ax in fig.axes for a in [*ax.texts, *ax.patches, *ax.lines]]
+    content = Bbox.union([a.get_window_extent(renderer) for a in artists])
+    # Crop vertical padding to one point, retaining the exact template width.
+    crop = Bbox.from_extents(0, max(0, content.y0 - fig.dpi/72),
+                            fig.bbox.width, min(fig.bbox.height, content.y1 + fig.dpi/72))
+    crop_inches = crop.transformed(fig.dpi_scale_trans.inverted())
+    for directory in (paper_dir, artifact_dir):
+        directory.mkdir(parents=True, exist_ok=True)
+    outputs = []
+    for suffix, fmt, dpi in [(".pdf", "pdf", None), (".svg", "svg", None),
+                              (".png", "png", 300), ("_600dpi.png", "png", 600)]:
+        targets = [artifact_dir / f"{stem}{suffix}"]
+        if fmt == "pdf":
             targets.append(paper_dir / f"{stem}.pdf")
         for target in targets:
-            kwargs = {"dpi": 300} if ext == "png" else {}
-            fig.savefig(target, format=ext, facecolor="white", **kwargs)
+            fig.savefig(target, format=fmt, dpi=dpi, facecolor="white", bbox_inches=crop_inches, pad_inches=0)
             outputs.append(target)
     plt.close(fig)
     return outputs
 
 
-def main() -> None:
+def main():
+    global ROOT
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--run", default=_publication_run(), help="Publication run used for snapshot status")
+    parser.add_argument("--root", type=Path, default=ROOT, help="Project root (for staging and tests)")
+    parser.add_argument("--run", help="Publication snapshot identifier")
+    parser.add_argument("--output-root", type=Path, help="Stage artwork without modifying project assets")
     args = parser.parse_args()
+    ROOT = args.root.resolve()
+    run = args.run or _publication_run()
+    target = args.output_root.resolve() if args.output_root else ROOT
     _configure_style()
-    snapshot, config, names = _load_context(args.run)
-    paper_dir = ROOT / "paper" / "generated" / "figures"
-    artifact_dir = ROOT / "artifacts" / args.run / "figures" / "methodology"
-    figures = {
-        "chromosome_encoding": figure_chromosome(names),
-        "metaheuristic_variants": figure_variants(config),
-        "experimental_workflow": figure_workflow(snapshot, config),
-    }
-    outputs: list[Path] = []
+    snapshot, config = _load_context(run)
+    figures = {"chromosome_encoding": figure_chromosome(),
+               "metaheuristic_variants": figure_variants(config),
+               "experimental_workflow": figure_workflow(snapshot, config)}
     for stem, fig in figures.items():
-        outputs.extend(_save(fig, stem, paper_dir, artifact_dir))
-    for output in outputs:
-        print(output.relative_to(ROOT).as_posix())
+        for output in _save(fig, stem, target / "paper/generated/figures",
+                            target / "artifacts" / run / "figures/methodology"):
+            print(output)
 
 
 if __name__ == "__main__":

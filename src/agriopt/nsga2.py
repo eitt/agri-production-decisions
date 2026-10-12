@@ -66,6 +66,33 @@ def random_chromosome(
     return Chromosome(crops=crops, waits=waits, area_frac=area_frac)
 
 
+def initialize_population(
+    data: ProblemData,
+    rng: np.random.Generator,
+    population_size: int,
+    max_slots: int,
+    max_wait: int,
+) -> list[Chromosome]:
+    """Create the common initial population used by every evolutionary variant.
+
+    The zero-production boundary point is retained because it is a natural feasible
+    extreme.  No method receives an additional hand-crafted high-production point.
+    Keeping this logic in one function also guarantees identical random-number
+    consumption when methods start from the same seed.
+    """
+    population = [
+        decode(data, random_chromosome(data, rng, max_slots, max_wait))
+        for _ in range(population_size)
+    ]
+    zero = Chromosome(
+        crops=np.full((data.L, max_slots), -1, dtype=int),
+        waits=np.zeros((data.L, max_slots), dtype=int),
+        area_frac=np.zeros((data.L, max_slots), dtype=float),
+    )
+    population[0] = decode(data, zero)
+    return population
+
+
 def decode(data: ProblemData, ind: Chromosome) -> Chromosome:
     production = np.zeros((data.K, data.T), dtype=float)
     residual_demand = None if data.demand is None else data.demand.copy()
@@ -310,20 +337,7 @@ def run_nsga2(
     rng = np.random.default_rng(seed)
     max_slots = infer_max_slots(data) if max_slots is None else int(max_slots)
 
-    pop = [decode(data, random_chromosome(data, rng, max_slots, max_wait)) for _ in range(population_size)]
-    # Preserve the two natural extremes from the beginning: no production (zero risk)
-    # and an aggressive full-area schedule. This improves boundary coverage without
-    # changing NSGA-II selection mechanics.
-    zero = Chromosome(
-        crops=np.full((data.L, max_slots), -1, dtype=int),
-        waits=np.zeros((data.L, max_slots), dtype=int),
-        area_frac=np.zeros((data.L, max_slots), dtype=float),
-    )
-    pop[0] = decode(data, zero)
-    if population_size > 1:
-        aggressive = random_chromosome(data, rng, max_slots, max_wait=0, empty_probability=0.0)
-        aggressive.area_frac[:] = 1.0
-        pop[1] = decode(data, aggressive)
+    pop = initialize_population(data, rng, population_size, max_slots, max_wait)
     rank_and_crowding(pop)
     history: list[dict] = []
 

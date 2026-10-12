@@ -10,7 +10,7 @@ from sklearn.ensemble import ExtraTreesRegressor
 
 from .model import ProblemData
 from .nsga2 import (
-    Chromosome, NSGA2Result, infer_max_slots, random_chromosome, decode, rank_and_crowding,
+    Chromosome, NSGA2Result, infer_max_slots, initialize_population, decode, rank_and_crowding,
     tournament, crossover, mutate, environmental_selection,
 )
 from .refinement import (
@@ -142,13 +142,7 @@ def run_hybrid_nsga2(
     rng = np.random.default_rng(seed)
     max_slots = infer_max_slots(data) if max_slots is None else int(max_slots)
 
-    pop = [decode(data, random_chromosome(data, rng, max_slots, max_wait)) for _ in range(population_size)]
-    zero = Chromosome(
-        crops=np.full((data.L, max_slots), -1, dtype=int),
-        waits=np.zeros((data.L, max_slots), dtype=int),
-        area_frac=np.zeros((data.L, max_slots), dtype=float),
-    )
-    pop[0] = decode(data, zero)
+    pop = initialize_population(data, rng, population_size, max_slots, max_wait)
     rank_and_crowding(pop)
 
     X_train: list[np.ndarray] = []

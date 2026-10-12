@@ -6,7 +6,7 @@ The literature revision organizes thirty-one verified and manuscript-used refere
 
 The revised Introduction follows six argumentative stages addressing planning significance, mandatory versus endogenous inactivity, agricultural specificity, computational alternatives, research questions, and bounded contributions. The Related Research section contains three subsections and introduces verified production-planning evidence showing that zero production or inserted idle time can be rational under particular costs, constraints, or temporal incentives.
 
-The central novelty claim remains comparative and integrative because the study combines weekly agricultural scheduling, covariance-based price risk, status-aware exact references, exhaustive continuous refinement, and surrogate-gated refinement. The surrogate allocates genuine mathematical-refinement calls and never substitutes reported objective values or determines archive membership through predicted values.
+The central positioning is comparative and integrative because the study evaluates weekly agricultural scheduling, covariance-based price risk, exact-solver evidence, exhaustive continuous refinement, and surrogate-gated refinement under shared controls. The manuscript no longer asserts that no previous study combines every component; instead, it identifies limited controlled evidence about allocating refinement effort within a common evolutionary backbone. The surrogate allocates genuine mathematical-refinement calls and never substitutes reported objective values or determines archive membership through predicted values.
 
 ## Verified non-continuous-production evidence
 
@@ -18,7 +18,7 @@ These sources support only a structural cross-industry claim that inactivity may
 
 The mathematical objectives remain expected income maximization and covariance-based monetary price-risk minimization, while utilization is neither an objective nor a constraint. Space-time utilization, lot temporal occupancy, and mean idle weeks appear only as post-hoc operational diagnostics, and every interpretation distinguishes mandatory agronomic gaps from endogenous waiting, unused slots, or reduced cultivated area.
 
-Computational outputs, numerical results, benchmark instances, parameter values, and stochastic seeds remain unchanged. The literature and discussion revisions clarify interpretation, align the manuscript with the verified production-planning call, and avoid claiming universal algorithmic superiority or empirical transferability beyond the evaluated agricultural instances.
+The fairness revision changes only the standard NSGA-II outputs because its prior implementation received an additional hand-crafted high-production chromosome that the hybrid variants did not receive. The corrected run retains the common zero-production boundary point and uses the same random initialization routine, population, generations, operators, and ten matched seeds as the hybrid methods. Exact, full-refinement, and surrogate-guided outputs remain unchanged, while the primary quality reference becomes the pooled empirical nondominated union and the SCIP-only reference is retained as a sensitivity analysis.
 
 ## Audit summary
 

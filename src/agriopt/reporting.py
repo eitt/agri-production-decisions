@@ -19,15 +19,16 @@ from .metrics import (
     igd_plus,
     nondominated,
     normalize,
+    pooled_empirical_reference,
     reference_scaling,
 )
 from .paths import repo_root
 
 METHOD_LABELS = {
-    "exact": "Exact ε-constraint",
+    "exact": "SCIP epsilon-constraint",
     "nsga2": "NSGA-II",
-    "nsga2_qp": "NSGA-II + QP",
-    "hnsga2": "Surrogate H-NSGA-II",
+    "nsga2_qp": "NSGA-II + full refinement",
+    "hnsga2": "Surrogate-guided H-NSGA-II",
 }
 METHOD_ORDER = ["exact", "nsga2", "nsga2_qp", "hnsga2"]
 MARKERS = {"exact": "o", "nsga2": "s", "nsga2_qp": "^", "hnsga2": "D"}
@@ -112,14 +113,11 @@ def compute_run_metrics(run_dir: str | Path) -> tuple[pd.DataFrame, pd.DataFrame
         return pd.DataFrame(), pd.DataFrame()
     rows = []
     for instance, fi in fronts.groupby("instance"):
-        exact = fi[fi["method"].eq("exact")][["income_mcop", "risk"]]
-        if len(exact) >= 2:
-            ref_raw = as_minimization_front(exact["income_mcop"], exact["risk"])
-            ref_source = "exact"
-        else:
-            ref_raw = nondominated(as_minimization_front(fi["income_mcop"], fi["risk"]))
-            ref_source = "pooled_empirical"
-        ref_raw = nondominated(ref_raw)
+        ref_raw = pooled_empirical_reference([
+            as_minimization_front(front["income_mcop"], front["risk"])
+            for _, front in fi.groupby(["method", "seed"], sort=False)
+        ])
+        ref_source = "pooled_empirical_nondominated_union"
         ideal, span = reference_scaling(ref_raw)
         ref = normalize(ref_raw, ideal, span)
         for (method, seed), fm in fi.groupby(["method", "seed"]):

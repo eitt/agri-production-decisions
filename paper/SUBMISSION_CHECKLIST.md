@@ -4,7 +4,7 @@
 
 - Confirm final author list, affiliations, ORCID identifiers, and corresponding-author email.
 - Confirm special issue selection in the Taylor & Francis submission system.
-- Confirm title: **Agricultural Production Decisions under Price Risk: Exact Multiobjective Optimization and Surrogate-Assisted NSGA-II**.
+- Confirm title: **Agricultural Production Planning under Correlated Price Risk: Exact Reference Computation and Surrogate-Guided Continuous Refinement**.
 - Remove every visible `PLACEHOLDER` before submission.
 
 ## Data layer
@@ -14,13 +14,14 @@
 - Freeze the municipality-product-month productivity dataset and its quality audit.
 - Resolve or explicitly exclude anomalous yield distributions identified during quality control.
 - Archive the exact instance files used by the computational experiment.
+- Describe farms and lots as data-informed synthetic benchmark constructions while preserving the empirical status of productivity and price inputs.
 
 ## Forecasting
 
-- Run rolling-origin validation for ARIMA/SARIMA, GP, and ARIMA+GP by product.
-- Evaluate GARCH-family volatility only when residual diagnostics justify conditional heteroskedasticity.
-- Report the selected model and error metrics for each product.
-- Store all forecast paths used by the optimization instances.
+- Confirm that the manuscript describes the implemented terminal 52-week holdout and never calls it rolling-origin validation.
+- Confirm that ARIMA, Gaussian-process, and ARIMA-plus-Gaussian-process candidates match the executable forecasting pipeline.
+- Report product-level selected models and holdout errors, together with a concise aggregate table in the manuscript.
+- Store the 104-week forecast paths used by the optimization instances and retain their preprocessing provenance.
 
 ## Exact SCIP experiment
 
@@ -33,39 +34,40 @@
 ## Evolutionary and hybrid experiment
 
 - Freeze NSGA-II parameters before final testing.
-- Run standard NSGA-II with matched seeds.
-- Run NSGA-II+QP with full conditional SCIP refinement.
-- Run surrogate-gated H-NSGA-II with the same refinement model.
-- Use 30 seeds when feasible, with the predeclared minimum fallback stated in the manuscript.
+- Run standard NSGA-II from the shared matched-initialization routine without an additional privileged high-production chromosome.
+- Preserve full conditional SLSQP refinement and surrogate-gated H-NSGA-II outputs without rerunning those methods.
+- Use ten predeclared matched seeds for every stochastic method in each complete instance.
 - Save seed-level archives, histories, refinement logs, and surrogate logs.
 
 ## Required metrics
 
-- Hypervolume.
-- IGD+.
-- Additive epsilon indicator.
+- Hypervolume, IGD+, and additive epsilon against the pooled empirical nondominated reference.
+- Sensitivity metrics against the status-aware SCIP incumbent reference.
 - Wall-clock time.
-- QP calls and cumulative QP time.
+- SLSQP refinement calls and cumulative refinement time.
 - Useful-refinement hit rate.
 - Surrogate prediction error and calibration evidence.
 - Exact gap and node count where applicable.
+- Paired two-sided Wilcoxon tests with Holm correction, rank-biserial effects, and paired bootstrap intervals.
+- Area-adjusted utilization, lot temporal occupancy, and mean idle weeks only as post-hoc diagnostics rather than objectives.
 
 ## Main-text figures
 
 1. End-to-end data, decision, exact, evolutionary, and surrogate-assisted architecture.
-2. Representative income-risk Pareto fronts with exact and approximate methods.
-3. Computational scalability and quality-versus-time behaviour.
-4. Surrogate ablation showing Pareto quality against QP calls and time.
+2. Representative income-risk Pareto fronts with exact and approximate methods under the corrected baseline.
+3. Computational scalability and pooled-reference quality-versus-time behaviour.
+4. Surrogate ablation showing Pareto quality against SLSQP refinement time.
 
 ## Main-text tables
 
 1. Data architecture and quality evidence.
 2. Benchmark instances.
 3. Compact formulation choices and computational implications.
-4. Forecasting validation and selected models.
+4. Implemented terminal-holdout forecasting validation and selected models.
 5. Exact SCIP performance.
-6. NSGA-II / NSGA-II+QP / H-NSGA-II comparison.
+6. NSGA-II / full-refinement / H-NSGA-II comparison under the pooled empirical reference.
 7. Surrogate-gating ablation.
+8. Reference-front sensitivity and paired seed-level inference.
 
 ## Supplementary material
 
@@ -84,3 +86,4 @@
 - Check that narrative sentences inside paragraphs do not use short, fragmented prose.
 - Recompile twice and visually inspect the complete PDF after final table and figure insertion.
 - Confirm disclosure, data availability, funding, and generative-AI statements against current Taylor & Francis requirements.
+- Confirm that `generated/method_run_sources.json` and `generated/submission_snapshot.json` identify every physical run source.

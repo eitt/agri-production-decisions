@@ -1,0 +1,6 @@
+{
+  "exact": "publication_slsqp_test",
+  "nsga2": "publication_nsga2_matched_init",
+  "nsga2_qp": "publication_slsqp_test",
+  "hnsga2": "publication_slsqp_test"
+}

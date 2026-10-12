@@ -1,0 +1,25 @@
+\begin{table}
+\tbl{Paired hypervolume comparisons by matched seed; differences and rank-biserial effects use method A minus method B, with Holm-adjusted two-sided Wilcoxon probabilities.}{
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lllrrrrrrrr}
+\toprule
+Instance & Metric & Comparison & $n$ & Median A & Median B & Median diff. & $W$ & $p$ & $p_{Holm}$ & $r_{rb}$ \\
+\midrule
+I01\_micro & HV & NSGA-II $-$ NSGA-II + full & 10 & 0.862 & 0.863 & -0.001 & 27.0 & 1.000 & 1.000 & 0.018 \\
+I01\_micro & HV & NSGA-II $-$ H-NSGA-II & 10 & 0.862 & 0.860 & 0.002 & 18.0 & 0.375 & 1.000 & 0.345 \\
+I01\_micro & HV & NSGA-II + full $-$ H-NSGA-II & 10 & 0.863 & 0.860 & 8.67e-04 & 21.0 & 0.557 & 1.000 & 0.236 \\
+I02\_small & HV & NSGA-II $-$ NSGA-II + full & 10 & 0.971 & 1.009 & -0.036 & 4.0 & 0.014 & 0.041 & -0.855 \\
+I02\_small & HV & NSGA-II $-$ H-NSGA-II & 10 & 0.971 & 0.977 & -0.010 & 24.0 & 0.770 & 0.770 & -0.127 \\
+I02\_small & HV & NSGA-II + full $-$ H-NSGA-II & 10 & 1.009 & 0.977 & 0.017 & 15.0 & 0.232 & 0.465 & 0.455 \\
+I03\_diverse & HV & NSGA-II $-$ NSGA-II + full & 10 & 0.746 & 0.745 & -0.014 & 26.0 & 0.922 & 0.922 & -0.055 \\
+I03\_diverse & HV & NSGA-II $-$ H-NSGA-II & 10 & 0.746 & 0.718 & 0.018 & 16.0 & 0.275 & 0.551 & 0.418 \\
+I03\_diverse & HV & NSGA-II + full $-$ H-NSGA-II & 10 & 0.745 & 0.718 & 0.033 & 12.0 & 0.131 & 0.393 & 0.564 \\
+I04\_two\_farms & HV & NSGA-II $-$ NSGA-II + full & 10 & 0.811 & 0.829 & -0.016 & 14.0 & 0.193 & 0.193 & -0.491 \\
+I04\_two\_farms & HV & NSGA-II $-$ H-NSGA-II & 10 & 0.811 & 0.793 & 0.016 & 5.0 & 0.020 & 0.041 & 0.818 \\
+I04\_two\_farms & HV & NSGA-II + full $-$ H-NSGA-II & 10 & 0.829 & 0.793 & 0.026 & 4.0 & 0.014 & 0.041 & 0.855 \\
+\bottomrule
+\end{tabular}
+}%
+}
+\label{tab:paired-hv}
+\end{table}

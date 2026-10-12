@@ -10,6 +10,21 @@ def as_minimization_front(income, risk):
 
 def nondominated(points: np.ndarray, tol: float = 1e-12) -> np.ndarray:
     p = np.asarray(points, dtype=float)
+    if p.ndim != 2:
+        raise ValueError("points must be a two-dimensional array")
+    if p.shape[0] == 0:
+        return p.copy()
+    p = np.unique(p[np.all(np.isfinite(p), axis=1)], axis=0)
+    if p.shape[1] == 2:
+        order = np.lexsort((p[:, 1], p[:, 0]))
+        ordered = p[order]
+        keep = np.zeros(len(ordered), dtype=bool)
+        best_second = np.inf
+        for i, second in enumerate(ordered[:, 1]):
+            if second < best_second - tol:
+                keep[i] = True
+                best_second = second
+        return ordered[keep]
     keep = np.ones(len(p), dtype=bool)
     for i in range(len(p)):
         if not keep[i]:
@@ -23,11 +38,21 @@ def nondominated(points: np.ndarray, tol: float = 1e-12) -> np.ndarray:
 
 
 def reference_scaling(reference: np.ndarray):
-    ref = np.asarray(reference, dtype=float)
+    ref = nondominated(np.asarray(reference, dtype=float))
+    if len(ref) == 0:
+        raise ValueError("reference front must contain at least one finite point")
     ideal = np.nanmin(ref, axis=0)
     nadir = np.nanmax(ref, axis=0)
     span = np.where(nadir - ideal > 1e-12, nadir - ideal, 1.0)
     return ideal, span
+
+
+def pooled_empirical_reference(fronts: list[np.ndarray]) -> np.ndarray:
+    """Return the nondominated union of finite, duplicate-free run fronts."""
+    usable = [np.asarray(front, dtype=float) for front in fronts if np.asarray(front).size]
+    if not usable:
+        return np.empty((0, 2), dtype=float)
+    return nondominated(np.vstack(usable))
 
 
 def normalize(points: np.ndarray, ideal: np.ndarray, span: np.ndarray) -> np.ndarray:
@@ -51,8 +76,8 @@ def hypervolume_2d(points: np.ndarray, reference_point=(1.1, 1.1)) -> float:
 
 
 def igd_plus(approximation: np.ndarray, reference: np.ndarray) -> float:
-    a = np.asarray(approximation, dtype=float)
-    r = np.asarray(reference, dtype=float)
+    a = nondominated(np.asarray(approximation, dtype=float))
+    r = nondominated(np.asarray(reference, dtype=float))
     if len(a) == 0 or len(r) == 0:
         return float('nan')
     vals = []
@@ -63,8 +88,8 @@ def igd_plus(approximation: np.ndarray, reference: np.ndarray) -> float:
 
 
 def additive_epsilon(approximation: np.ndarray, reference: np.ndarray) -> float:
-    a = np.asarray(approximation, dtype=float)
-    r = np.asarray(reference, dtype=float)
+    a = nondominated(np.asarray(approximation, dtype=float))
+    r = nondominated(np.asarray(reference, dtype=float))
     if len(a) == 0 or len(r) == 0:
         return float('nan')
     return float(max(min(np.max(aa - rr) for aa in a) for rr in r))

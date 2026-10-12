@@ -1,0 +1,67 @@
+MANUSCRIPT NARRATIVE QUALITY AUDIT
+======================================
+Manuscript: C:\Users\LEONA\Documents\GitHub\agri-production-decisions\paper\main.tex
+Expected complete instances: 4
+Abstract word count: 217
+
+ABSTRACT STRUCTURAL CHECKLIST
+- PASS: problem-first opening
+- PASS: explicit unresolved gap before methods
+- PASS: methodology after gap
+- PASS: numeric decision-relevant results
+- PASS: interpretive final sentence
+- PASS: target length 180--230 words
+
+SUBSECTIONS PER SECTION
+- Introduction: 0
+- Related Research: 3
+- Materials and Data: 3
+- Mathematical Formulation: 3
+- Solution Methods: 3
+- Experimental Design and Evaluation: 2
+- Results: 3
+- Discussion: 0
+- Conclusion: 0
+
+REPOSITORY-SPECIFIC LANGUAGE IN PROSE
+- None detected.
+
+STYLE TERMS FOR MANUAL REVIEW
+- None detected.
+
+UNRESOLVED PLACEHOLDERS
+- None detected.
+
+STALE INSTANCE-COUNT CLAIMS
+- None detected.
+
+FIGURE/TABLE REFERENCES
+- Missing targets: none
+- Unreferenced labels: none
+
+CITATIONS
+- Unresolved keys: none
+- Uncited bibliography entries: none
+
+REPEATED NUMERICAL CLAIM CANDIDATES
+- 0: 11 occurrences
+- 1: 13 occurrences
+- 10: 5 occurrences
+- 10.1016: 18 occurrences
+- 10.1080: 5 occurrences
+- 2: 13 occurrences
+- 2022: 5 occurrences
+- 2024: 4 occurrences
+- 2025: 5 occurrences
+- 2026: 7 occurrences
+- 5: 4 occurrences
+- These are candidates for manual comparison with generated artifacts; repetition alone is not an error.
+
+LATEX BUILD SIGNALS
+- Final page count from main.log: 23
+- LaTeX/package/class warnings in main.log: 8
+
+ISSUES
+- None detected by automated checks.
+
+READY FOR MANUAL SCIENTIFIC REVIEW

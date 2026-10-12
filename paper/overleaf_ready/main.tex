@@ -1,4 +1,4 @@
-% IJPR Special Issue manuscript -- generated results are refreshed from complete runs only.
+% IJPR Special Issue manuscript.
 \documentclass[]{interact}
 
 \usepackage{epstopdf}
@@ -12,12 +12,15 @@
 \usepackage{graphicx}
 \usepackage{url}
 \usepackage{rotating}
+\usepackage{flafter}
+\usepackage{placeins}
 
-\newcommand{\Fset}{\mathcal{F}}
 \newcommand{\Lset}{\mathcal{L}}
 \newcommand{\Kset}{\mathcal{K}}
 \newcommand{\Tset}{\mathcal{T}}
+\newcommand{\Eset}{\mathcal{E}}
 \newcommand{\Gset}{\mathcal{G}}
+\newcommand{\Qset}{\mathcal{Q}}
 \input{generated/results_macros.tex}
 
 \begin{document}
@@ -26,12 +29,15 @@
 
 \title{Agricultural Production Planning under Correlated Price Risk: Exact Reference Computation and Surrogate-Guided Continuous Refinement}
 
-\author{\name{Leonardo Hern\'an Talero-Sarmiento}}
+\author{
+\name{Leonardo Hern\'an Talero-Sarmiento\textsuperscript{a}\thanks{CONTACT Leonardo Hern\'an Talero-Sarmiento. Email: ltalero@unab.edu.co; ORCID: \protect\url{https://orcid.org/0000-0002-4129-9163}} and Henry Lamos-Diaz\textsuperscript{b}\thanks{ORCID: \protect\url{https://orcid.org/0000-0003-1778-9768}}}
+\affil{\textsuperscript{a}Facultad de Econom\'ia y Negocios, Universidad Aut\'onoma de Bucaramanga, Bucaramanga, Colombia; \textsuperscript{b}Escuela de Estudios Industriales y Empresariales, Universidad Industrial de Santander, Bucaramanga, Colombia}
+}
 
 \maketitle
 
 \begin{abstract}
-Agricultural production planning couples discrete crop calendars with continuous land allocation under uncertain output prices. This study formulates a bi-objective mixed-integer planning model that maximizes expected income and minimizes covariance-based price risk while enforcing empirical crop eligibility, lot occupancy, maturation, and botanical-family recovery. Four publication-complete instances cover one or two farms, 2--8 lots, 5--12 crops, 52--104 planning weeks, and 0.6--6.0 ha. Exact $\varepsilon$-constraint runs in SCIP provide an incumbent reference, standard NSGA-II supplies a low-cost baseline, and two matheuristics apply either full or surrogate-guided continuous quadratic area refinement with SLSQP. Each stochastic method is evaluated over ten seeds using normalized hypervolume, IGD$^+$, additive epsilon, nondominated-set size, runtime, and refinement effort. Exact-run time rises from 51.25 s on the two-lot instance to 9.52 h on the largest completed instance, while most intermediate SCIP points on the larger instances terminate at the time limit. Surrogate gating reduces refinement calls from 12,000 to 3,000 per replication. On the 8-lot, 104-week instance, it reduces mean total runtime from 1,478.48 to 410.52 s relative to full refinement, but median hypervolume also declines from 0.745 to 0.718. Standard NSGA-II records the highest median hypervolume among the stochastic methods on three of four instances. The evidence therefore supports method selection as a trade-off among reference quality, computation, and planning scale, rather than a universal algorithm ranking.
+Production planning becomes difficult when discrete sequencing, continuous resource allocation, biological lead times, and uncertain economic conditions interact. Agricultural systems make this coupling explicit because planting calendars, maturation, land occupation, and correlated selling prices jointly shape feasible and economically defensible plans. Exact and evolutionary approaches offer complementary strengths, yet it remains unclear when continuous mathematical refinement should be applied exhaustively and when its cost justifies selective allocation. We address this gap through a bi-objective event model that maximizes expected gross revenue and minimizes contemporaneous covariance-based price risk, evaluated with SCIP $\varepsilon$-constraint computation, standard NSGA-II, full SLSQP refinement, and surrogate-guided refinement over ten matched seeds on four data-informed synthetic benchmarks. Exact computation increased from 51.25 seconds on the two-lot instance to 9.52 hours on the largest completed instance, with most intermediate SCIP points on larger instances ending at the time limit. Across the evaluated methods, surrogate gating reduced refinement calls by 75\% and lowered mean runtime from 1,478.48 to 410.52 seconds on the eight-lot instance. Full refinement led median hypervolume on three instances, but Holm-adjusted paired evidence supported its advantage over standard NSGA-II only on I02; on I04, both exceeded the selective variant. The evidence shows that mathematical intensification should be allocated according to planning scale, certification needs, and the Pareto-quality loss decision makers are prepared to accept.
 \end{abstract}
 
 \begin{keywords}
@@ -40,181 +46,286 @@ agricultural production planning; multiobjective optimization; NSGA-II; matheuri
 
 \section{Introduction}
 
-Crop planning requires a producer to commit land and timing before harvest prices are observed. Maturation delays, lot capacity, and recovery requirements make these decisions difficult to reverse, while heterogeneous local yields and correlated prices connect agronomic choices to portfolio risk. Production planning must therefore represent not only expected economic return but also the exposure created by the timing and composition of harvests. Reviews of agri-food planning models identify this integration of biological and market constraints as a persistent modelling requirement \citep{Ahumada2009}. Farm-level diversification studies likewise show why economic risk should be evaluated jointly with return rather than treated as an informal qualification after a plan has been selected \citep{Burbano2022}.
+Production planning must frequently commit heterogeneous resources before uncertain economic conditions become observable, while technological or biological lead times make many assignments expensive to reverse. Agricultural planning presents this challenge in a particularly transparent form because land, planting windows, maturation periods, recovery requirements, and correlated output prices jointly determine which production sequences remain feasible and economically defensible \citep{Ahumada2009,Tan2012}.
 
-Two computational tensions follow. First, exact multiobjective optimization can generate informative reference trade-offs and solver bounds, but mixed-integer quadratic models become expensive as feasible crop events multiply across lots and weeks. Second, evolutionary methods scale without requiring global mixed-integer solves, but their area decisions may leave exploitable continuous structure unused. NSGA-II remains a standard baseline because nondominated sorting and diversity preservation generate a portfolio of alternatives in one run \citep{Deb2002}. Matheuristics offer an intermediate design: an evolutionary search determines the combinatorial schedule, and mathematical optimization improves continuous decisions conditional on that schedule. Comparable decompositions have been used in multiobjective production scheduling to preserve tractable mathematical structure inside population-based search \citep{Hu2024}.
+The resulting planning problem cannot be reduced to continuous resource utilization, because deliberately unoccupied capacity can emerge for fundamentally different operational reasons. Some inactivity is mandatory when calendars, maturation, setup, crop-family recovery, or horizon boundaries prevent production, whereas other inactivity is endogenous when a planner postpones an event, leaves a slot unused, or reduces cultivated area to improve the expected-revenue--risk compromise. Production research has long shown that zero-production periods and inserted idle time can be economically or operationally rational rather than automatically inefficient \citep{WagnerWhitin1958,KanetSridharan2000,Jodlbauer2006,TrevinoMartinez2022}.
 
-Continuous refinement itself can dominate runtime when applied to every offspring. Surrogate-assisted evolutionary optimization addresses this allocation problem by learning where expensive calls are likely to be useful, while retaining true objective evaluations for selection and reporting \citep{Liu2024}. This logic is pertinent here because fixing crop identities and harvest weeks leaves a convex quadratic area-allocation problem. A learned gate may reduce the number of conditional refinements, but fewer calls are valuable only if the resulting loss in Pareto quality is acceptable.
+Agricultural models nevertheless add empirical and structural complications that classical lot-sizing or machine-scheduling abstractions do not represent directly, including geographically variable yields and location-specific crop eligibility. Harvest timing also follows crop-specific maturation, while prices move jointly across markets and thereby connect otherwise separate production decisions through correlated economic exposure. Existing studies address uncertain maturation, demand, harvest, and yield, while portfolio formulations connect crop diversification with financial or environmental exposure \citep{Tan2012,Radulescu2014,Burbano2022}; however, implementable weekly plans must also coordinate discrete event sequences with continuous cultivated areas.
 
-This study evaluates that quality--effort trade-off through one reproducible decision model and four solution methods: an exact SCIP $\varepsilon$-constraint procedure, standard NSGA-II, NSGA-II with full continuous refinement, and surrogate-guided H-NSGA-II. The contribution is threefold. The model combines event-based land use with correlated monetary risk and physical activation bounds. The experiment distinguishes certified SCIP points from time-limited incumbents instead of describing the entire exact archive as optimal. Finally, the ablation makes refinement calls and time visible alongside Pareto indicators. The analysis asks: (i) how quickly exact reference computation becomes costly; (ii) how approximate fronts compare with the SCIP incumbent reference; and (iii) whether selective refinement yields a defensible balance between front quality and computational effort.
+This mixed discrete--continuous structure requires choosing among exact optimization, evolutionary exploration, and matheuristic refinement according to their distinct computational and evidentiary roles. Exact multiobjective procedures offer status-bearing incumbent trade-offs, population-based search explores extensive nonconvex schedule spaces, and conditional mathematical refinement can improve continuous allocations after discrete crop identities and dates have been decoded \citep{Mavrotas2009,Deb2002,Hu2024}. Refining every offspring can nevertheless become computationally dominant, which motivates surrogate-guided allocation of optimization effort rather than surrogate replacement of the economic objectives \citep{Jin2011,Liu2024}.
+
+Accordingly, this study examines three questions that connect production-planning value, computational scale, and the selective allocation of mathematical improvement within a common evolutionary framework. RQ1 examines how rapidly exact $\varepsilon$-constraint computation becomes costly as farms, lots, crops, planning weeks, and feasible events increase jointly; RQ2 compares standard NSGA-II with exhaustive and selective refinement under a pooled empirical Pareto reference, while retaining the status-aware SCIP archive as a sensitivity benchmark; and RQ3 evaluates whether surrogate-guided selection reduces refinement effort while retaining defensible Pareto quality under constrained runtime budgets.
+
+The study contributes a weekly bi-objective production-planning model that maximizes expected gross revenue and minimizes covariance-based monetary price risk under empirical eligibility and agronomic feasibility, together with a controlled comparison of four computational roles. The experiment reports certification status, Pareto quality, runtime, refinement effort, and ex-post operational diagnostics without treating utilization as an optimization objective, without equating every inactive period with inefficiency, and without extending agricultural evidence into unsupported cross-industry empirical claims.
 
 \section{Related Research}
 
-\subsection{Agricultural production planning under economic risk}
+\subsection{Production planning under uncertainty}
 
-Agricultural planning models span tactical production, harvest, distribution, and resource-allocation decisions \citep{Ahumada2009}. Annual-crop models must additionally coordinate maturation and harvest timing with uncertain yields or markets \citep{Tan2012}. A portfolio interpretation is useful because crop choices create joint rather than independent exposure: diversification can reduce risk when price movements are imperfectly correlated. Empirical farm-planning work has operationalized this principle by comparing diversified strategies through return distributions and risk \citep{Burbano2022}. The present model adopts the same economic intuition but embeds it in a weekly event schedule with lot-specific productivity.
+Production planning under uncertainty requires explicit trade-offs among economic performance, exposure, timing, and heterogeneous resource availability, because a single utilization measure cannot distinguish productive discipline from strategically preserved flexibility. Reviews of modern planning problems document expanding operational constraints and solution families, while hybridization research shows why structured problems increasingly combine mathematical programming with metaheuristic exploration \citep{Battaia2013,Boysen2022,Battaia2022}.
 
-The formulation uses price-return covariance rather than independent crop penalties. Monetary exposure depends on both output and harvest-week price, so equal land allocations can create different risk profiles across crops, lots, and weeks. This representation remains a planning approximation: it quantifies correlated output-price exposure but does not claim to represent every production, weather, or behavioural risk faced by a farm.
+Classical production research also establishes that inactivity cannot be interpreted uniformly as waste, because zero-production periods may support economically or operationally preferable schedules. The Wagner--Whitin lot-sizing model admits zero-production periods when setup and inventory economics favour temporally concentrated production \citep{WagnerWhitin1958}, while the scheduling taxonomy of \citet{KanetSridharan2000} identifies inserted idle time as a purposeful decision under several performance criteria. Integrated lot-sizing and scheduling further connects production quantities, setups, and sequencing decisions \citep{Jodlbauer2006}, demonstrating a structural principle that transfers across sectors even when its empirical magnitude remains application-specific.
 
-\subsection{Multiobjective evolutionary optimization}
+Contemporary energy-aware scheduling reinforces that distinction because planned idle time can reduce energy cost or emissions when tariffs and job sequences vary temporally. \citet{TrevinoMartinez2022} explicitly show that strategically planned idle time need not constitute waste, while maintenance-integrated scheduling uses inserted inactivity to exploit time-of-use tariffs \citep{An2023}. These studies support a cautious conceptual claim that inactivity may be purposeful, rather than an empirical claim that manufacturing results automatically generalize to agriculture.
 
-NSGA-II ranks candidates by nondomination and uses crowding distance to retain diversity along the approximated frontier \citep{Deb2002}. Its relevance to agricultural planning is practical: one run returns multiple income--risk alternatives, and decoding can enforce calendar feasibility before objective evaluation. Stochastic performance nevertheless varies across seeds, making replicated quality indicators necessary. Hypervolume summarizes convergence and spread relative to a reference point; IGD$^+$ measures the distance from reference points to the approximation; and additive epsilon records the worst shift required for the approximation to weakly dominate the reference.
+Agricultural production planning combines that general structural distinction with biological timing, uncertain market outcomes, spatially variable productivity, and operational decisions extending from planting through harvest. The agri-food review by \citet{Ahumada2009} connects planning across these decisions, while \citet{Tan2012} represent demand, maturation, harvest, and yield risk for annual crops. Mandatory inactivity therefore arises whenever sowing calendars, maturation, family recovery, or horizon feasibility preclude another event, whereas endogenous inactivity arises from decoded waiting choices, unused event slots, and reduced cultivated areas.
 
-\subsection{Matheuristics and surrogate-assisted optimization}
+Portfolio formulations provide a complementary economic perspective because crop returns are jointly distributed, meaning diversification depends on covariance rather than independent crop-specific penalties. In related applications, \citet{Radulescu2014} integrate expected return with financial and environmental risks, whereas \citet{Burbano2022} apply decision analysis and portfolio theory to horticultural diversification. The present setting connects that covariance-aware perspective with weekly lot occupation, continuous cultivated area, and empirical municipality--crop eligibility, while deliberately excluding weather, yield, behavioural, and complete supply-chain uncertainty.
 
-Matheuristics divide a problem so mathematical programming solves a structured subproblem while a heuristic explores the discrete search space. Production-scheduling research demonstrates that mathematical decoding can improve continuous or assignment decisions without repeatedly solving the full mixed-integer model \citep{Hu2024}. In this study, a decoded crop schedule fixes event identities and dates; only cultivated areas remain continuous.
+\subsection{Multiobjective methods in agricultural planning}
 
-Surrogate assistance adds a resource-allocation layer. Reviews distinguish global, local, hybrid, and learning-based strategies, but a common principle is that predicted utility should determine which expensive evaluations receive budget \citep{Liu2024}. Here an Extra Trees regressor predicts realized refinement gain from candidate features. The surrogate never supplies reported income or risk and never determines archive membership from predicted objectives; it only selects refinement candidates, with a random exploration share retained.
+Agricultural multiobjective studies increasingly connect economic performance with environmental exposure, distribution, sustainability, and interactive decision support while preserving application-specific agronomic restrictions. Recent Colombian cultivation research integrates production and distribution decisions \citep{Vergara2025}, enhanced NSGA-II designs incorporate fuzzy information and expert rules \citep{Huang2025}, and interactive evolutionary optimization reduces evaluation demands while supporting agricultural trade-off exploration \citep{Kropp2026}.
 
-\section{Decision Setting and Data}
+Matheuristics exploit complementary strengths by assigning combinatorial exploration to a heuristic while mathematical programming resolves a structured subproblem or improves selected candidate solutions. In multiobjective cellular manufacturing, \citet{Hu2024} embed mathematical optimization within evolutionary scheduling, showing how exact structure can support rather than replace population-based search. This decomposition is especially relevant when fixing discrete identities and times converts the remaining allocation problem into a more tractable continuous program.
 
-\subsection{Study setting and productivity evidence}
+Production applications demonstrate several ways to connect mathematical and heuristic components, including formulation-driven neighborhoods, decomposition, route improvement, and coordinated scheduling decisions. \citet{Li2022} combine an efficient formulation with a matheuristic for unrelated parallel machines, while \citet{Qin2024} address capacitated multi-level lot sizing with substitution and backorders. Hybrid evolutionary mechanisms also coordinate parallel batching with delivery decisions \citep{Kucukkoc2024}, while related designs improve production routing \citep{Vadseth2023} and integrate production with distribution scheduling \citep{Vie2025}, confirming that structured hybrids can broaden computational reach across planning levels.
 
-The decision setting represents Colombian farms divided into heterogeneous lots. A production event assigns a crop, sowing week, harvest week, and cultivated area to one lot. The source productivity table contains 17,059 municipality--crop--planting-month observations, 17 municipalities, and 40 recorded agricultural products. These counts describe the source table; the completed benchmarks use supported subsets of 5--12 crops rather than all 40 products.
+Industrial evidence also indicates that practical matheuristics must be judged through computational reliability and decision quality under realistic planning horizons rather than through algorithm labels alone. \citet{Seyfi2026} integrate lot sizing, machine scheduling, shifts, and workforce planning for washing-machine production, obtaining scalable feasible solutions when longer horizons challenge direct optimization. These studies motivate conditional mathematical refinement, but they rarely isolate whether refining every evolutionary candidate is preferable to allocating refinement through learned utility.
 
-Yield estimation combines municipality, crop, and planting-period evidence. Crop eligibility requires at least three supporting observations for a lot's municipality--crop pair; if no crop passes that threshold for a generated lot, the crop with greatest support is retained to avoid a structurally unusable lot. Feasible event variables are created only when the sowing calendar permits the event, harvest occurs within the horizon, the empirical eligibility rule is satisfied, and expected yield is positive.
+\subsection{Surrogate-assisted optimization}
+
+Surrogate-assisted evolutionary computation replaces or prioritizes expensive evaluations using models trained on previously evaluated candidates, thereby treating computation as a resource-allocation decision. Early synthesis emphasizes that imperfect surrogates require explicit model management and continued contact with true evaluations to avoid misleading the search \citep{Jin2011}. Multiobjective surveys similarly identify accuracy, dimensionality, infill selection, and limited evaluation budgets as central design challenges for computationally expensive optimization \citep{Chugh2019}.
+
+More recent reviews broaden this foundation by classifying surrogate models, algorithmic roles, applications, and unresolved questions across continuous and combinatorial expensive optimization. \citet{He2023} review surrogate-assisted evolutionary algorithms across several problem classes and applications, while \citet{Liu2024} show that expensive combinatorial settings remain substantially less developed than continuous counterparts. A recent differential-evolution review likewise stresses that real-world value depends on whether surrogate overhead remains small relative to the evaluations being rationed \citep{Yu2025}.
+
+Current algorithmic developments improve relationship learning and local-region management for expensive multiobjective problems, but their customary goal remains prediction or replacement of expensive objective evaluations. \citet{Pierce2025} learn informative comparison relationships among candidate solutions, whereas \citet{Wang2026} adapt local-region search for challenging high-dimensional expensive multiobjective optimization problems within demanding practical settings. The present study instead predicts realized optimization gain and uses that estimate only to decide which candidates receive a true continuous-refinement call.
+
+Taken together, these streams establish the components required for the present comparison but leave limited controlled evidence about how continuous-refinement effort should be allocated inside a common evolutionary backbone for weekly agricultural schedules. The study therefore makes a focused comparative contribution by holding representation, initialization, evolutionary operators, and evaluation budgets constant while varying refinement allocation, without assigning individual novelty to established algorithmic or agricultural components.
+
+\section{Materials and Data}
+
+\subsection{Planning context and productivity data}
+
+The decision setting uses data-informed synthetic Colombian farm instances divided into heterogeneous lots, rather than observations of specific operating farms, with each production event assigning a crop, sowing week, harvest week, and cultivated area to one lot. The source productivity table contains 17,059 municipality--crop--planting-month observations across 17 municipalities and 40 recorded agricultural products, providing the evidence used to parameterize crop eligibility and yields. The completed synthetic benchmarks use empirically supported subsets containing between 5 and 12 crops, rather than incorporating all 40 products in every instance.
+
+Benchmark scale was informed by an earlier empirical characterization of small-scale agricultural production in Santander using the DANE Third National Agricultural Census. In that study, \citet{Talero2018} examined Guanent\'a's 17 municipalities, identified 14,764 monoculture lots, and retained 7,039 open-field lots not exceeding 5 ha and having documented historical yields. The present study uses this evidence to define the small-farm scale of the benchmark design; the individual farms and lot partitions analysed here are nevertheless synthetic constructions designed for controlled computational comparison. The empirical design therefore draws on an earlier regional characterization, whereas the optimization formulation and computational experiment reported here are defined independently for the present study.
+
+The earlier regional analysis also documented substantial sparsity and heterogeneity across municipality--product observations, motivating explicit location-specific yield information rather than homogeneous productivity across all lots. The present procedure implements that principle independently: current productivity evidence determines municipality--crop support, crop eligibility requires at least three observations for a lot's municipality--crop pair, and expected yields are estimated hierarchically from current crop, municipality, and planting-period evidence. If no crop reaches the support threshold for a synthetic lot, the crop with the greatest local support is retained to avoid a structurally unusable lot. Feasible event variables are created only when the empirical eligibility rule is satisfied, the implied sowing week is admissible, harvest occurs within the horizon, and expected yield is positive.
 
 \subsection{Prices and uncertainty}
 
-Weekly prices were constructed for Bucaramanga's Centroabastos market from DANE SIPSA wholesale workbooks for 2018--2026. The input provenance records the downloaded files and hashes. The experiment uses a 104-week price forecast generated from the processed weekly series; shorter instances use its first 52 weeks. A Ledoit--Wolf covariance estimate of crop log returns supplies a positive-semidefinite dependence matrix, with numerical symmetrization and a diagonal adjustment only if required for convexity.
+Wholesale price observations used in this paper were retrieved directly from the official DANE Sistema de Informaci\'on de Precios y Abastecimiento del Sector Agropecuario (SIPSA) historical wholesale-price publications \citep{DANESIPSA}. The analysis focuses on Bucaramanga's Centroabastos market, for which the annual workbooks covering 2018--2026 were harmonized into consistent weekly product-level price series. Workbook fields are normalized to common date, product, source, and price definitions; observations are filtered to Centroabastos, duplicates are removed, and weekly prices are averaged, with source files and hashes retained in the input provenance. Use of SIPSA as the regional wholesale-price source is consistent with the earlier Santander planning study \citep{Talero2018}, although every price series and forecast used in the present experiment was reconstructed from the updated official SIPSA source.
 
-The optimization is performed in Colombian pesos (COP). Publication tables and figures apply a frozen reporting rate of 3,306.86 COP/USD dated 28 September 2026. If $p_{kt}$ is COP/kg, then $p^{\mathrm{USD}}_{kt}=p_{kt}/3306.86$. Likewise, income in million COP is converted to thousand USD by multiplication by $1000/3306.86$, and risk based on million-COP exposure is converted by $(1000/3306.86)^2$. Positive constant rescaling leaves Pareto dominance unchanged; the quadratic risk unit changes by the square of the monetary conversion factor.
+Short internal gaps of at most four weeks are linearly interpolated, after which unresolved leading or trailing values are propagated from the nearest observation; any remaining nonpositive or missing values halt preprocessing. Model selection uses the final 52 observed weeks as one terminal holdout, rather than a rolling-origin design, and compares ARIMA, Gaussian-process regression, and an ARIMA-plus-Gaussian-process residual hybrid separately for each product. ARIMA candidates are estimated on log prices over $p,q\in\{0,1\}$ and $d\in\{0,1\}$, with the training-series specification selected by AIC; the Gaussian process uses lagged log prices, annual Fourier terms, and a Mat\'ern kernel, while the hybrid models residual structure only when at least 30 residual observations are available. The product-level model minimizing holdout sMAPE is refitted to the complete series and generates the 104-week path, whose first 52 weeks serve shorter instances. The selected forecasting model and its terminal holdout error for every product are reported in Table~\ref{tab:forecast}, allowing direct comparison across the retained series.
 
-No \texttt{demand\_weekly.csv} file was present in the reproducible computational snapshot. Consequently, the reported experiment has no market-throughput cap and makes no use of SIPSA-A demand.
+\input{generated/tables/forecast_validation.tex}
 
-\subsection{Benchmark construction}
+A Ledoit--Wolf covariance estimate of crop log returns supplies a positive-semidefinite dependence matrix, with numerical symmetrization and a diagonal adjustment only if required for convexity. This representation captures contemporaneous cross-crop price dependence within each week, but it does not model cross-period covariance, weather, yield, demand, or behavioural uncertainty.
 
-The benchmark ladder changes farms, lots, area, crop count, and horizon under fixed instance seeds. Only instances with all expected files were admitted: one exact run and ten seeds (2026--2035) for each stochastic method. The snapshot scanner reads each \texttt{metadata.json}, requires \texttt{status=ok}, and verifies the expected front before inclusion. It does not rely on a final run index. At the analysed snapshot, \NIncludedInstances{} instances meet this rule; the largest contains \LargestIncludedLots{} lots.
+All optimization calculations are performed in Colombian pesos (COP), whereas publication tables and figures apply a frozen reporting rate of 3,306.86 COP/USD dated 28 September 2026. Accordingly, when $p_{kt}$ is expressed in COP/kg, its reported dollar value is obtained as $p^{\mathrm{USD}}_{kt}=p_{kt}/3306.86$ without altering Pareto dominance in any comparison. Gross revenue in million COP is converted to thousand USD by multiplication by $1000/3306.86$, while risk based on million-COP exposure is converted by $(1000/3306.86)^2$. Positive constant rescaling leaves Pareto dominance unchanged, although the quadratic risk unit changes by the square of the monetary conversion factor.
+
+Because a reproducible market-throughput series was unavailable for the reported experiment, the market-capacity constraint was not activated and the analysis does not use SIPSA-A demand information.
+
+\subsection{Benchmark instances}
+
+Each data-informed synthetic benchmark specifies a total coordinated area, which is allocated reproducibly among farms while constraining every individual farm to remain within the 5-ha small-farm envelope. Each farm's area is then partitioned among heterogeneous lots, and municipalities are assigned from the current productivity evidence; local empirical support subsequently determines crop eligibility and yield tensors. Network-level benchmark area can exceed 5 ha because it aggregates several small farms, so the small-scale restriction applies to the individual production unit rather than to the coordinated network. The benchmark ladder increases through farm count, lot count, total coordinated area, crop count, and planning horizon under fixed instance seeds. Table~\ref{tab:instances} reports all benchmark instances satisfying the predefined completeness criterion and summarizes their main dimensions for the subsequent computational comparison.
+
+An instance entered the comparative analysis only when one exact run and all ten prescribed seeds (2026--2035) for each stochastic method had completed successfully. The inclusion check required successful status and an available nondominated approximation for every prescribed run, without admitting partial method--seed combinations. Application of this predefined rule retained \NIncludedInstances{} complete instances for analysis, among which the largest computationally evaluated benchmark contains \LargestIncludedLots{} heterogeneous lots.
 
 \input{generated/tables/benchmark_instances.tex}
 
+Together, these empirical layers define the feasible crop-event space and provide the economic parameters required by the production-planning model introduced in the following section.
+
 \section{Mathematical Formulation}
 
-The decision problem selects agronomically feasible crop events and their areas. Expected income is maximized while correlated price risk is minimized. The formulation is expressed in the internal monetary units used by optimization; the ex-post USD transformation above is used for manuscript reporting.
+\subsection{Model assumptions and notation}
 
-\subsection{Sets and Parameters}
+The model considers farms partitioned into lots over a finite weekly horizon, during which the planner selects crops, harvest dates, and cultivated areas for feasible production events. Feasibility reflects empirical crop eligibility, planting calendars, crop-specific maturation, exclusive lot occupation, and botanical-family recovery requirements, while schedule quality depends on expected gross revenue and correlated monetary price risk. Continuous land occupation is not imposed because inactive periods may result either from agronomic restrictions or from the trade-off between expected revenue and price risk.
 
-Let $\Fset$ be the farms, $\Lset$ the lots, and $\Lset_f\subseteq\Lset$ the lots belonging to farm $f$. Let $\Kset$ denote crops, $\Tset$ weekly planning periods, and $\Tset_k\subseteq\Tset$ feasible harvest periods for crop $k$. For an optional market extension, $\Gset$ denotes sales groups. The sets $\mathcal{C}_{lw}$ and $\mathcal{C}^{q}_{lw}$ contain, respectively, crop--harvest events that occupy lot $l$ during week $w$ and events from botanical family $q$ whose occupation or recovery intervals conflict in that week.
+\noindent\textit{Modelling assumptions and boundaries.}
+Planning periods are weekly, crop maturity is deterministic within each benchmark, and every selected event is harvested after its corresponding maturation time has elapsed. Yields are conditional expectations based on lot, crop, and sowing information, whereas expected prices are forecasts available when the production plan is constructed. Dependence among crop prices is represented through contemporaneous covariance, while weather, yield, behavioural, demand, and cross-period price uncertainty remain outside the present risk measure. Production and harvesting costs are excluded, which means that $F_1$ measures expected gross revenue rather than profit, and land utilization is evaluated after optimization. Zero production remains a mathematically feasible boundary solution, although its inclusion does not imply that the model recommends inactivity under ordinary operating conditions.
 
-Parameter $A_l$ is lot area (m$^2$); $n_k$ is crop maturation duration (weeks); $s(k,t)=t-n_k$ is the sowing week implied by harvest $t$; $r_{lks}$ is expected yield (kg/m$^2$); and $p_{kt}$ is expected price (COP/kg). The indicator $b_{lk}$ equals one when empirical evidence makes crop $k$ eligible for lot $l$. Matrix $\Sigma\succeq0$ is the covariance matrix of crop price log returns, $q(k)$ is botanical family, and $g(k)$ is sales group. The optional parameter $D_{gt}$ would cap group-$g$ throughput in week $t$, but is absent from the reported base experiment.
+\noindent\textit{Indices.}
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+Symbol & Unit & Meaning \\
+\midrule
+$l$ & -- & lot \\
+$k$ & -- & crop \\
+$t,w$ & week & planning and occupation periods \\
+$q$ & -- & botanical family \\
+$g$ & -- & sales group \\
+\bottomrule
+\end{tabular}
+\end{center}
 
-\subsection{Decision Variables}
+\noindent\textit{Sets.}
+\begin{center}
+\begin{tabular}{@{}llp{0.55\textwidth}@{}}
+\toprule
+Symbol & Unit & Meaning \\
+\midrule
+$\Lset$ & -- & lots available for production \\
+$\Kset$ & -- & crops considered in the plan \\
+$\Tset$ & week & weekly periods in the planning horizon \\
+$\Qset$ & -- & botanical families represented by the crops \\
+$\Gset$ & -- & sales groups used by the market-capacity constraint \\
+$\Eset$ & -- & feasible events $(l,k,t)$ satisfying eligibility, timing, horizon, and positive-yield requirements \\
+$\mathcal C_{lw}$ & -- & feasible events that occupy lot $l$ during week $w$ \\
+$\mathcal C^q_{lw}$ & -- & family-$q$ events whose occupation or recovery intervals conflict on lot $l$ during week $w$ \\
+\bottomrule
+\end{tabular}
+\end{center}
 
-For every feasible event $(l,k,t)$, define
-\begin{equation}
-y_{lkt}=\begin{cases}1,&\text{if crop }k\text{ is activated on lot }l\text{ for harvest in week }t,\\0,&\text{otherwise,}\end{cases}
-\end{equation}
-and let $z_{lkt}\geq0$ be cultivated area (m$^2$). Aggregate harvested quantity is $x_{kt}\geq0$ (kg). Monetary exposure is $e_{kt}\geq0$, measured in million COP, and $\rho\geq0$ is the epigraph variable used for quadratic risk in the exact formulation.
+\noindent\textit{Parameters.}
+\begin{center}
+\begin{tabular}{@{}llp{0.55\textwidth}@{}}
+\toprule
+Symbol & Unit & Meaning \\
+\midrule
+$A_l$ & m$^2$ & cultivable area of lot $l$ \\
+$n_k$ & week & maturation time of crop $k$ \\
+$s(k,t)=t-n_k$ & week & sowing period associated with harvest period $t$ \\
+$r_{lks}$ & kg/m$^2$ & expected yield for lot $l$, crop $k$, and sowing period $s$ \\
+$p_{kt}$ & COP/kg & expected price of crop $k$ harvested in period $t$ \\
+$\Sigma$ & dimensionless & positive-semidefinite covariance matrix of crop log returns \\
+$q(k)$ & -- & botanical family assigned to crop $k$ \\
+$g(k)$ & -- & sales group assigned to crop $k$ \\
+$D_{gt}$ & kg/week & market capacity for sales group $g$ during period $t$ \\
+\bottomrule
+\end{tabular}
+\end{center}
 
-\subsection{Bi-objective Optimization Model}
+\noindent\textit{Decision variables.}
+\begin{center}
+\begin{tabular}{@{}llp{0.55\textwidth}@{}}
+\toprule
+Symbol & Unit & Meaning \\
+\midrule
+$y_{lkt}$ & binary & activation of feasible event $(l,k,t)$ \\
+$z_{lkt}$ & m$^2$ & cultivated area assigned to feasible event $(l,k,t)$ \\
+$x_{kt}$ & kg/week & harvested quantity of crop $k$ during period $t$ \\
+$e_{kt}$ & million COP & monetary exposure associated with crop $k$ during period $t$ \\
+$\rho$ & (million COP)$^2$ & epigraph variable representing the quadratic price-risk objective \\
+\bottomrule
+\end{tabular}
+\end{center}
 
-Production and exposure are aggregated through
+\subsection{Bi-objective model}
+
+The objectives are
 \begin{align}
-x_{kt} &= \sum_{l\in\Lset} r_{lk,s(k,t)}z_{lkt}, && k\in\Kset,\ t\in\Tset_k, \label{eq:production}\\
-e_{kt} &= \frac{p_{kt}x_{kt}}{10^6}, && k\in\Kset,\ t\in\Tset. \label{eq:exposure}
-\end{align}
-The two objectives are
-\begin{align}
-\max\quad F_1 &= \sum_{k\in\Kset}\sum_{t\in\Tset}e_{kt}, \label{eq:income}\\
+\max\quad F_1 &= \sum_{k\in\Kset}\sum_{t\in\Tset}e_{kt}, \label{eq:revenue}\\
 \min\quad F_2 &= \sum_{t\in\Tset}\mathbf e_t^{\mathsf T}\Sigma\mathbf e_t, \label{eq:risk}
 \end{align}
-where $F_1$ is expected income in million COP and $F_2$ is correlated price risk in (million COP)$^2$. The latter is a monetary mean--variance measure, not a production cost.
+subject to
+\begin{align}
+x_{kt} &= \sum_{l:(l,k,t)\in\Eset} r_{lk,s(k,t)}z_{lkt}, && k\in\Kset,\ t\in\Tset, \label{eq:production}\\
+e_{kt} &= \frac{p_{kt}x_{kt}}{10^6}, && k\in\Kset,\ t\in\Tset, \label{eq:exposure}\\
+0&\le z_{lkt}\le A_l y_{lkt}, && (l,k,t)\in\Eset, \label{eq:link}\\
+\sum_{(k,t)\in\mathcal C_{lw}}y_{lkt}&\le1, && l\in\Lset,\ w\in\Tset, \label{eq:occupancy}\\
+\sum_{(k,t)\in\mathcal C^q_{lw}}y_{lkt}&\le1, && l\in\Lset,\ w\in\Tset,\ q\in\Qset, \label{eq:rotation}\\
+y_{lkt}&\in\{0,1\},\ z_{lkt}\ge0, && (l,k,t)\in\Eset, \nonumber\\
+x_{kt},e_{kt}&\ge0, && k\in\Kset,\ t\in\Tset. \nonumber
+\end{align}
+With $\mathbf e_t=(e_{kt})_{k\in\Kset}$, equations~\eqref{eq:production} and \eqref{eq:exposure} aggregate production and monetary exposure, equation~\eqref{eq:link} couples event activation with physical lot area, and equations~\eqref{eq:occupancy} and \eqref{eq:rotation} impose occupation and family-recovery conflicts. The first objective represents expected gross sales revenue rather than net profit because production and harvesting costs remain outside the present formulation. The second objective aggregates contemporaneous crop-price covariance by harvest week without representing serial price dependence, while neither objective directly rewards land occupation. Consequently, lower exposure may result from smaller cultivated areas, fewer production events, or discretionary inactivity within otherwise feasible weekly production schedules.
 
-Activation uses the physical lot area rather than an arbitrary large constant:
-\begin{equation}
-0\le z_{lkt}\le A_l y_{lkt}, \qquad l\in\Lset,\ k\in\Kset,\ t\in\Tset_k. \label{eq:link}
-\end{equation}
-Weekly conflict cliques enforce exclusive lot occupation,
-\begin{equation}
-\sum_{(k,t)\in\mathcal{C}_{lw}}y_{lkt}\le1,
-\qquad l\in\Lset,\ w\in\Tset, \label{eq:occupancy}
-\end{equation}
-and family-specific cliques extend this restriction through the configured recovery interval,
-\begin{equation}
-\sum_{(k,t)\in\mathcal{C}^{q}_{lw}}y_{lkt}\le1,
-\qquad l\in\Lset,\ w\in\Tset,\ q. \label{eq:rotation}
-\end{equation}
-Variables exist only if $b_{lk}=1$, $s(k,t)$ is an allowed sowing week, $t$ lies within the horizon, and $r_{lk,s(k,t)}>0$. This event generation enforces empirical eligibility and temporal feasibility without adding redundant zero variables.
-
-\noindent\textit{Optional market-throughput extension.}
-If independent market-capacity evidence is available, the implementation can add
+\noindent\textit{Market capacity.}
+When independent observations of weekly market capacity are available, sales from each product group can be limited through the following constraint:
 \begin{equation}
 \sum_{k:g(k)=g}x_{kt}\le D_{gt},\qquad g\in\Gset,\ t\in\Tset. \label{eq:optional-demand}
 \end{equation}
-Constraint~\eqref{eq:optional-demand} was inactive in every result reported here.
+Because the available SIPSA records describe wholesale prices rather than independently measured purchasing capacity, this restriction was omitted from the computational experiments reported here.
 
-\subsection{Epsilon-Constraint Reference Formulation}
+\subsection{Reference solutions}
 
-The reference procedure first solves
+The reference procedure begins by determining the maximum expected gross revenue attainable within the base feasible region defined by the model:
 \begin{equation}
-I^{\max}=\max\{F_1:(\ref{eq:production})--(\ref{eq:rotation})\}. \label{eq:maxincome}
+I^{\max}=\max\{F_1:(x,y,z,e)\in\Omega\}, \label{eq:maxrevenue}
 \end{equation}
-For each configured $\eta\in\{0,0.1,\ldots,1\}$, SCIP then solves
+Here, $\Omega$ denotes the feasible region formed by the base constraints and variable domains introduced in Section~4.2 of the mathematical formulation.
+For each prescribed $\eta\in\{0,0.1,\ldots,1\}$, SCIP then solves
 \begin{align}
 \min\quad &\rho,\nonumber\\
 \text{s.t.}\quad &\rho\ge F_2, \label{eq:epigraph}\\
-&F_1\ge\eta I^{\max}, \label{eq:epsilon}\
-&(\ref{eq:production})--(\ref{eq:rotation}).\nonumber
+&F_1\ge\eta I^{\max}, \label{eq:epsilon}\\
+&(x,y,z,e)\in\Omega.\nonumber
 \end{align}
 When a feasible incumbent is found, an optional strong-Pareto tie break maximizes $F_1$ subject to the attained risk plus a numerical tolerance. Solver status and relative gap are retained for every point, so a feasible time-limited incumbent is not relabelled as certified optimal.
 
+Because the resulting optimization problem combines discrete event choices with continuous cultivated areas, the next section introduces evolutionary search and mathematical refinement strategies suited to this structure.
+
 \section{Solution Methods}
 
-\subsection{Exact epsilon-constraint SCIP}
+\subsection{Solution representation and decoding}
 
-SCIP solves the mixed-integer quadratically constrained formulation with 11 income thresholds. Instance-specific limits are 300, 600, 1,200, and 1,800 s per solve for I01--I04, four threads, and a target relative gap of $10^{-4}$. Because the strong-Pareto tie break can require a second solve, total run time can exceed 11 times the point limit.
+Figure~\ref{fig:chromosome} summarizes the shared representation and deterministic decoding process that converts aligned crop, waiting, and cultivated-area genes into feasible dated production events.
 
-\subsection{NSGA-II}
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=0.94\textwidth]{generated/figures/chromosome_encoding.pdf}
+\caption{Chromosome semantics and deterministic decoding used by every evolutionary method. Aligned crop, waiting-week, and area-fraction matrices encode each candidate, while the decoder derives feasible sowing dates, harvest dates, cultivated areas, production quantities, and event records. The displayed schedule is illustrative rather than an empirical optimization result.}
+\label{fig:chromosome}
+\end{figure}
 
-The baseline encodes crop sequences and waiting decisions by lot. Decoding produces feasible sow--harvest events and area values, after which true income and risk are evaluated. Binary tournament selection, crossover probability 0.90, mutation, nondominated sorting, and crowding-based environmental selection operate with population 80 for 150 generations. Ten fixed seeds permit replication without changing instance data.
+The decoder enforces empirical eligibility, temporal availability, botanical-family recovery, horizon feasibility, and positive output before evaluating gross revenue and risk. Mandatory inactivity arises from sowing calendars, maturation, setup, family recovery, and horizon truncation, whereas endogenous inactivity arises from unused slots, waiting genes permitting zero to four additional weeks, and reduced cultivated-area fractions. Distinguishing these two sources of inactivity prevents every unoccupied interval from being interpreted automatically as direct evidence of scheduling inefficiency.
 
-\subsection{Full continuous quadratic refinement}
+\subsection{NSGA-II and area refinement}
 
-Conditional on a decoded discrete schedule, area allocation has a linear income expression, a positive-semidefinite quadratic risk expression, physical lot constraints, and fixed event timing. The reported NSGA-II+refinement experiment sends every offspring to this continuous subproblem. Although its mathematical structure is a convex quadratic refinement, the computational backend in this experiment is SLSQP, not SCIP.
+Binary tournament selection, crossover probability 0.90, mutation, nondominated sorting, and crowding-based environmental selection operate with a population of 80 candidates over 150 generations. Ten fixed seeds permit stochastic replication without changing any instance data, while every candidate retains true decoded or mathematically refined economic objective values. All three evolutionary variants call one shared initialization routine, consume the same random draws for a matched seed, and retain only the natural zero-production boundary schedule as a deterministic extreme; no method receives an additional hand-crafted high-production chromosome.
 
-\subsection{Surrogate-assisted H-NSGA-II}
+\noindent\textit{Baseline NSGA-II.}
+Standard NSGA-II retains the decoded cultivated areas and objective values without invoking continuous mathematical refinement, thereby providing the common low-cost evolutionary reference for both hybrid variants.
 
-H-NSGA-II uses the same evolutionary operators and SLSQP refinement, but limits refinement to 25\% of offspring. During five warm-up generations, candidates are sampled for refinement. After at least 30 realized gains are available, an Extra Trees regressor ranks candidates; 20\% of each refinement budget remains random exploration. All selection, nondominated sorting, and reported objectives use actual decoded or SLSQP-refined values. Surrogate predictions only control access to refinement.
+\noindent\textit{Full refinement.}
 
-\section{Computational Experiment}
+Conditional on a decoded discrete schedule, area allocation has a linear gross-revenue expression, a positive-semidefinite quadratic risk expression, physical lot constraints, and fixed event timing. In the NSGA-II+refinement method, every offspring is submitted to this continuous subproblem before environmental selection uses its resulting objective values. Although the subproblem has convex quadratic structure, the reported computational implementation solves the continuous refinement with SLSQP rather than SCIP.
 
-\subsection{Experimental settings}
+\subsection{Surrogate-assisted refinement}
 
-All results come from \texttt{results/publication\_slsqp\_test}. Complete instances contain one exact run and 30 stochastic runs: ten each for NSGA-II, full refinement, and H-NSGA-II. Incomplete instances are excluded as units; a finished seed cannot enter tables unless every required seed and method for that instance is present. Optimization outputs remain unchanged, and manuscript currency conversion is reporting-only.
+H-NSGA-II uses the same evolutionary operators and SLSQP refinement as the full-refinement method, but limits mathematical refinement to 25\% of the offspring produced during each generation. Candidate refinements are sampled during the first five generations, thereby providing initial observations of realized improvement before the surrogate begins ranking new candidates. After at least 30 realized gains are available, an Extra Trees regressor ranks candidates, while 20\% of each refinement budget remains reserved for random exploration. Selection, nondominated sorting, and reported objectives always use decoded or SLSQP-refined values, because surrogate predictions determine only which candidates receive refinement.
 
-\subsection{Performance indicators}
+Figure~\ref{fig:method_variants} isolates the principal algorithmic contrast by holding evolutionary generation and Pareto survival constant while changing only how conditional area refinement is allocated. The surrogate estimates realized refinement gain for candidate prioritization, whereas every selection decision and archived objective value remains grounded in decoded or SLSQP-refined evaluations.
 
-For I01--I04, the nondominated SCIP incumbent archive defines the normalization and reference set. This label is deliberate because time-limited points may have nonzero or uninformative gaps. Hypervolume uses reference point $(1.1,1.1)$ after objective normalization; higher values indicate greater dominated normalized area. Lower IGD$^+$ and additive epsilon are preferred. Nondominated point count, total runtime, refinement calls, cumulative refinement time, and useful-refinement hit rate complement these quality measures. Medians summarize stochastic quality and runtime; mean runtime is used only for explicitly stated runtime ratios.
+\begin{figure}[p]
+\centering
+\includegraphics[width=0.96\textwidth]{generated/figures/metaheuristic_variants.pdf}
+\caption{Shared NSGA-II backbone and alternative allocation of conditional continuous area refinement. Baseline NSGA-II performs no mathematical refinement, full refinement sends every offspring to SLSQP, and surrogate-guided H-NSGA-II allocates a 25\% budget using predicted realized gain plus random exploration. All variants retain true objective values for Pareto survival.}
+\label{fig:method_variants}
+\end{figure}
+\FloatBarrier
+
+Together, these variants isolate refinement allocation as the controlled methodological contrast, because their chromosome semantics, decoding rules, evolutionary operators, population sizes, generation counts, and objective evaluations otherwise remain equivalent.
+
+\section{Experimental Design and Evaluation}
+
+Figure~\ref{fig:experimental_workflow} connects empirical inputs, benchmark construction, four computational methods, stochastic comparisons, evaluation indicators, and the predefined completeness rule applied before analysis. The workflow distinguishes the eight designed benchmark instances from the \NIncludedInstances{} that satisfied this rule, thereby preventing incomplete larger-instance evidence from entering inferential comparisons.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=0.96\textwidth]{generated/figures/experimental_workflow.pdf}
+\caption{End-to-end controlled experiment. Empirical inputs parameterize a data-informed synthetic benchmark ladder; complete instances enter exact and stochastic comparisons under matched controls, followed by pooled-reference Pareto evaluation, paired inference, computational assessment, post-hoc operational diagnostics, and exact-solver evidence.}
+\label{fig:experimental_workflow}
+\end{figure}
+
+\subsection{Computational experiment}
+
+The computational comparison combined SCIP incumbent archives with three stochastic methods evaluated under identical benchmark data and matched initialization conditions. In total, each included instance comprised one exact run and 30 stochastic runs, corresponding to ten matched seeds for every evolutionary method. Standard NSGA-II used the same random initialization protocol as both refinement variants; archived runs with privileged deterministic initialization were excluded from the primary comparison. An instance entered tables and inferential comparisons only when every required method--seed result was available, ensuring that no partial larger-instance evidence affected method rankings.
+
+SCIP solves the mixed-integer quadratically constrained formulation at 11 gross-revenue thresholds for I01--I04, using four threads and a target relative gap of $10^{-4}$. Instance-specific limits are 300, 600, 1,200, and 1,800 s per solve, while the optional strong-Pareto tie break can require a second solve and therefore raise total runtime beyond 11 times the nominal point limit.
+
+\subsection{Performance measures}
+
+For each complete instance, the primary reference is the nondominated union of every finite, duplicate-free point produced by SCIP and all thirty stochastic runs. The ideal and componentwise spans of this pooled empirical front define normalization, while hypervolume uses reference point $(1.1,1.1)$ in normalized minimization space; higher hypervolume and lower IGD$^+$ or additive epsilon are preferred. A secondary analysis repeats every indicator against the nondominated SCIP incumbent archive, whose time-limited points may have nonzero or uninformative gaps, so the primary analysis no longer assigns SCIP zero distance merely because it supplied the reference.
+
+Additional measures include nondominated point count, total runtime, refinement calls, cumulative refinement time, and useful-refinement hit rate for every applicable method and instance. Medians summarize stochastic quality, runtime is additionally reported through its interquartile range and mean where relevant, and matched seeds support paired two-sided Wilcoxon signed-rank comparisons. Three method contrasts are evaluated within each instance and metric, Holm correction controls their familywise error rate, rank-biserial correlation describes direction and magnitude, and paired bootstrap intervals quantify uncertainty around median differences.
+
+Operational diagnostics are calculated after optimization from decoded schedules, meaning that they serve as interpretive measures rather than optimization objectives or binding constraints. For a decoded event $e$ with cultivated area $a_e$, sowing week $s_e$, and harvest week $h_e$, area-adjusted space--time utilization is
+\begin{equation}
+U=\frac{\sum_e a_e(h_e-s_e)}{|\Tset|\sum_{l\in\Lset}A_l}. \label{eq:utilization}
+\end{equation}
+Lot temporal occupancy is $U_l^{\mathrm{time}}=|\cup_{e\in\mathcal E_l}[s_e,h_e)|/|\Tset|$, while mean idle weeks averages the horizon weeks outside those occupied unions across lots. Together, these post-hoc measures distinguish partial-area intensity from temporal occupation, although they cannot by themselves classify every inactive interval as mandatory or economically chosen.
 
 \section{Results}
 
-\subsection{Exact tractability}
+\subsection{Exact solutions and runtime}
 
-Total exact-run time increases from 51.25 s for I01 to 9,185.10 s (2.55 h) for I02, 22,824.80 s (6.34 h) for I03, and 34,274.58 s (9.52 h) for I04. Status evidence changes with scale. Ten of 11 I01 points are optimal and one terminates at the target gap. I02 has four optimal and seven time-limited points. I03 and I04 each have one optimal income-endpoint and ten time-limited points. Thus, SCIP remains valuable as an incumbent reference, but the experiment does not establish full-front optimality beyond the smallest instance.
+Total exact-run time increases from 51.25 s for I01 to 9,185.10 s (2.55 h) for I02, 22,824.80 s (6.34 h) for I03, and 34,274.58 s (9.52 h) for I04, while the associated solution-status evidence deteriorates as instance scale increases. Ten of 11 I01 points are optimal and one terminates at the target gap, whereas I02 contains four optimal points and seven time-limited incumbents. I03 and I04 each contain one optimal gross-revenue endpoint and ten time-limited incumbents, as summarized with the corresponding runtimes in Table~\ref{tab:exact}. Thus, SCIP remains valuable as an incumbent reference, but the experiment does not establish full-front optimality beyond the smallest instance.
 
 \input{generated/tables/exact_performance.tex}
 
-\subsection{Pareto quality}
-
-Table~\ref{tab:comparison} reports seed medians. Standard NSGA-II has the highest stochastic median hypervolume on I01 (0.863), I03 (0.831), and I04 (0.831). Full refinement is marginally highest on I02 (1.009 versus 1.007 for NSGA-II), with slightly lower median IGD$^+$ (0.030 versus 0.032). These differences are descriptive, not evidence of a universal ordering. On I03, full and selective refinement attain lower median hypervolume than NSGA-II, while on I04 full refinement is close to NSGA-II and H-NSGA-II is lower. Conditional area optimization therefore does not translate automatically into a better final archive under fixed evolutionary settings.
-
-\input{generated/tables/method_comparison.tex}
-
-Figure~\ref{fig:pareto} shows representative seeds chosen nearest each method's median hypervolume. The SCIP curves are incumbent archives; points with time-limit status must not be read as proofs of global efficiency.
-
-\begin{figure}
-\centering
-\subfloat[I01 micro]{\includegraphics[width=0.48\textwidth]{generated/figures/pareto_I01_micro.pdf}}\hfill
-\subfloat[I02 small]{\includegraphics[width=0.48\textwidth]{generated/figures/pareto_I02_small.pdf}}\\
-\subfloat[I03 diverse]{\includegraphics[width=0.48\textwidth]{generated/figures/pareto_I03_diverse.pdf}}\hfill
-\subfloat[I04 two farms]{\includegraphics[width=0.48\textwidth]{generated/figures/pareto_I04_two_farms.pdf}}
-\caption{Income--risk fronts in publication USD units. Stochastic lines show a median-hypervolume representative seed.}
-\label{fig:pareto}
-\end{figure}
-
-\subsection{Computational scaling}
-
-NSGA-II median runtime stays between 48.93 and 72.84 s across completed instances, whereas exact runtime grows by nearly three orders of magnitude. Full refinement raises median runtime to 1,454.71 s on I03 and 372.73 s on I04. H-NSGA-II reduces those medians to 416.35 and 187.86 s, respectively. Using means, full refinement is 3.60 times slower than H-NSGA-II on I03 and 1.97 times slower on I04.
+NSGA-II median runtime ranges from 51.45 to 103.85 s across completed instances, whereas exact runtime grows by nearly three orders of magnitude. Full refinement raises median runtime to 1,454.71 s on I03 and 372.73 s on I04, while H-NSGA-II reduces the corresponding medians to 416.35 and 187.86 s. Based on the observed mean runtimes, full refinement is 3.60 times slower than H-NSGA-II on I03 and 1.97 times slower on I04, respectively. Figure~\ref{fig:scaling} jointly relates this increase in computational effort to the normalized hypervolume attained by each method and every completed instance.
 
 \begin{figure}
 \centering
@@ -224,9 +335,31 @@ NSGA-II median runtime stays between 48.93 and 72.84 s across completed instance
 \label{fig:scaling}
 \end{figure}
 
-\subsection{Value of full versus surrogate-guided refinement}
+\subsection{Pareto quality}
 
-Full refinement makes 12,000 SLSQP calls per replication; surrogate gating makes 3,000, a 75\% reduction. On I03, median cumulative refinement time falls from 1,346.04 to 284.46 s and useful-refinement hit rate rises from 96.0\% to 98.8\%. On I04, refinement time falls from 289.67 to 71.54 s and hit rate rises from 94.8\% to 98.9\%. The higher hit rate shows concentrated allocation, but quality must be read jointly: median hypervolume falls from 0.745 to 0.718 on I03 and from 0.829 to 0.793 on I04. Surrogate gating is therefore a computational economy with a measured quality cost in these instances.
+Table~\ref{tab:comparison} reports the observed seed-level medians against the pooled empirical nondominated reference for every evaluated method and completed benchmark instance. Full refinement records the highest stochastic median hypervolume on I01 (0.863), I02 (1.009), and I04 (0.829), whereas matched-initialization NSGA-II is narrowly highest on I03 (0.746 versus 0.745 for full refinement). H-NSGA-II reaches 0.860, 0.977, 0.718, and 0.793 across I01--I04, respectively, showing that fewer refinement calls can coincide with a lower final-front indicator even when useful-call concentration improves.
+
+\input{generated/tables/method_comparison.tex}
+
+Paired seed-level comparisons temper this descriptive ordering because only three of the twelve hypervolume contrasts remain below 0.05 after Holm correction. Full refinement exceeds NSGA-II on I02 by a median paired difference of 0.0358 in the full-minus-baseline direction ($p_{\mathrm{Holm}}=0.041$, corresponding rank-biserial magnitude 0.855), while on I04 NSGA-II exceeds H-NSGA-II by 0.0155 and full refinement exceeds H-NSGA-II by 0.0257 (both $p_{\mathrm{Holm}}=0.041$, with rank-biserial effects 0.818 and 0.855). The remaining contrasts do not provide paired evidence after correction, which is especially important for the nearly equal I03 medians and the small I01 differences.
+
+The SCIP-reference sensitivity analysis preserves the stochastic-method hypervolume rank on every instance, even though the absolute IGD$^+$ values change because the reference geometry differs. Full refinement ranks first on I01, I02, and I04 under both references, while NSGA-II ranks first on I03; consequently, the principal ordering is not an artefact of replacing the incomplete SCIP archive with the pooled reference.
+
+Figure~\ref{fig:pareto} shows representative seeds selected according to their proximity to each method's median hypervolume across the corresponding ten benchmark replications. The SCIP curves represent incumbent archives, meaning that points with time-limit status cannot be interpreted as proofs of global Pareto efficiency.
+
+\begin{figure}
+\centering
+\subfloat[I01 micro]{\includegraphics[width=0.48\textwidth]{generated/figures/pareto_I01_micro.pdf}}\hfill
+\subfloat[I02 small]{\includegraphics[width=0.48\textwidth]{generated/figures/pareto_I02_small.pdf}}\\
+\subfloat[I03 diverse]{\includegraphics[width=0.48\textwidth]{generated/figures/pareto_I03_diverse.pdf}}\hfill
+\subfloat[I04 two farms]{\includegraphics[width=0.48\textwidth]{generated/figures/pareto_I04_two_farms.pdf}}
+\caption{Gross-revenue--risk fronts in publication USD units. Stochastic lines show a median-hypervolume representative seed.}
+\label{fig:pareto}
+\end{figure}
+
+\subsection{Refinement and resulting schedules}
+
+Full refinement makes exactly 12,000 SLSQP calls per replication, whereas surrogate gating makes 3,000 calls and therefore reduces the refinement count by 75\%. On instance I03, median cumulative refinement time falls from 1,346.04 to 284.46 s while the useful-refinement hit rate rises from 96.0\% to 98.8\%, respectively. On instance I04, cumulative refinement time falls from 289.67 to 71.54 s while the corresponding useful-refinement hit rate rises from 94.8\% to 98.9\%, respectively. The higher hit rate shows concentrated allocation, but quality must be read jointly because median hypervolume falls from 0.745 to 0.718 on I03 and from 0.829 to 0.793 on I04. Table~\ref{tab:refinement} and Figure~\ref{fig:refinement} jointly present the observed trade-off between lower computational effort and the resulting reduction in overall Pareto quality. Surrogate gating therefore provides a computational economy that carries a measurable quality cost for the benchmark instances evaluated in this experiment.
 
 \input{generated/tables/refinement_ablation.tex}
 
@@ -237,60 +370,164 @@ Full refinement makes 12,000 SLSQP calls per replication; surrogate gating makes
 \label{fig:refinement}
 \end{figure}
 
-\subsection{Interpretation of a representative production schedule}
-
-A decision-level example was selected from the median-hypervolume H-NSGA-II seed for I02. Within that front, the compromise minimizes Euclidean distance to the normalized ideal of maximum income and minimum risk. The selected point yields expected income of \RepresentativeIncomeKUSD{} thousand USD and risk of \RepresentativeRiskKUSDsq{} (thousand USD)$^2$. Figure~\ref{fig:schedule} translates that point into 11 production events over four lots. The plan sequences white maize, green pea, and potato; allocated event areas range from approximately 0.03 to 0.70 ha. The diagram demonstrates that a Pareto point is not only an objective pair but an implementable calendar of sowing, harvest, and cultivated-area decisions.
+A decision-level example was selected from the H-NSGA-II seed whose I02 hypervolume lies closest to the median obtained across its ten replications. Within that front, the reported compromise minimizes Euclidean distance to the normalized ideal combining maximum expected gross revenue with minimum price risk. The selected representative compromise yields expected gross revenue of \RepresentativeIncomeKUSD{} thousand USD, risk of \RepresentativeRiskKUSDsq{} (thousand USD)$^2$, and area-adjusted space--time utilization of \RepresentativeLandUtilizationPct\%. Figure~\ref{fig:schedule} translates that point into \RepresentativeEventCount{} production events over four lots, with mean temporal occupancy of \RepresentativeMeanLotOccupancyPct\% and mean idle time of \RepresentativeMeanIdleWeeks{} weeks per lot. The difference between area-adjusted utilization and temporal occupancy reflects partial-area events whose allocated areas range from approximately 0.03 to 0.70 ha across the representative schedule. These diagnostics show that white space in the Gantt combines agronomic feasibility, discretionary timing, and reduced productive intensity rather than representing a single form of scheduling inefficiency.
 
 \begin{figure}
 \centering
 \includegraphics[width=0.88\textwidth]{generated/figures/representative_schedule.pdf}
-\caption{Representative compromise schedule for I02 small. Labels report crop and allocated area; each bar spans sowing to harvest week.}
+\caption{Representative compromise schedule for I02 small. Bars span sowing through the week preceding harvest, internal labels report crop and cultivated area, and lot labels report temporal occupancy. The upper annotation distinguishes area-adjusted space--time utilization from mean lot occupancy and reports mean inactive weeks per lot.}
 \label{fig:schedule}
 \end{figure}
 
+\FloatBarrier
 \section{Discussion}
 
-The experiment separates three computational roles. SCIP supplies economically interpretable reference points and status information, but its rapid runtime growth and the prevalence of time-limited incumbents restrict certification beyond I01. Standard NSGA-II supplies diverse fronts at low and comparatively stable cost. Conditional continuous refinement exploits convex area structure, yet more local optimization does not guarantee a better global archive because refinement changes the search trajectory and consumes time without expanding the discrete schedule space.
+Matching initialization materially changes the comparative account because the archived baseline had received a deterministic high-production chromosome that neither hybrid variant received. Under the new pooled scaling, replacing that privileged initialization with the shared random initializer lowers baseline median hypervolume from 0.864 to 0.862 on I01, from 1.007 to 0.971 on I02, from 0.831 to 0.746 on I03, and from 0.831 to 0.811 on I04. Full refinement consequently becomes the descriptive median leader on three instances rather than one, although paired evidence supports its advantage over the corrected baseline only on I02 and therefore does not justify a general superiority claim.
 
-Surrogate-guided refinement succeeds at its immediate task: it directs one quarter as many SLSQP calls toward candidates with a higher useful-refinement rate. The larger completed instances show the practical value of that allocation through substantial runtime reductions. However, lower hypervolume and worse distance indicators relative to full refinement show that some omitted calls still matter to the final front. The defensible interpretation is therefore conditional. When runtime is constrained, selective refinement offers a tunable intermediate method; when Pareto quality relative to the incumbent reference dominates computation, this experiment gives no basis for preferring H-NSGA-II over the alternatives.
+The pooled empirical reference removes automatic zero-distance scores for the SCIP method and acknowledges that most intermediate SCIP points on I02--I04 are time-limited incumbents rather than certified efficient solutions. Retaining the former SCIP-incumbent reference as a sensitivity benchmark preserves every stochastic hypervolume rank, which makes the revised ordering robust to that reference choice while leaving absolute distance indicators reference-dependent. SCIP therefore supplies status, gaps, endpoints, and tractability evidence, whereas the pooled union supplies the more defensible primary geometry for comparative indicators.
 
-The comparison also cautions against treating local-refinement success as final-front success. Hit rates exceed 98\% for H-NSGA-II on I02--I04, yet its archive can remain worse because a locally useful area change may not improve global spread, and repeated exploitation can alter diversity. Future tests should vary the refinement fraction, exploration share, and gain target, and should compare equal wall-clock budgets rather than only equal generations.
+Continuous area refinement can improve a decoded candidate locally without guaranteeing a better final archive because accepted changes alter parent selection, crowding, and subsequent genetic trajectories while leaving the discrete schedule neighborhood unchanged. Surrogate gating treats mathematical intensification as a computational budget by predicting realized refinement gain, not by approximating economic objectives or determining archive membership; its one-quarter call allocation increases useful-call rates and reduces refinement time, although the I04 paired results show a measurable final-front cost relative to both alternatives.
 
-Several limits bound inference. The experiment contains four complete instances and ten stochastic seeds per method. Exact reference archives for I02--I04 contain time-limited points, so quality indicators measure agreement with an incumbent reference, not distance to a proven Pareto set. The covariance objective captures correlated price exposure but excludes weather, yield, and behavioural uncertainty. The market-throughput extension was inactive because no reproducible demand file was present. Finally, the 17,059-row productivity source has uneven municipality--crop support; empirical eligibility reduces extrapolation but does not remove data sparsity.
+The production schedules also demonstrate why inactive periods cannot be interpreted automatically as inefficiency without first examining their agronomic and economic causes. Agronomic calendars, maturation, setup, botanical-family recovery, and horizon boundaries create mandatory gaps, whereas waiting genes, unused slots, and cultivated-area reductions create endogenous gaps that may alter harvest prices or monetary exposure. Because utilization is neither an objective nor a constraint, the reported space--time utilization, lot temporal occupancy, and mean idle weeks remain post-hoc diagnostics whose interpretation requires the decoded schedule and cannot be reduced to a universal efficiency judgment.
+
+The cross-industry literature supports a structural rather than empirical transferability claim concerning the conditions under which planned inactivity can remain operationally rational. Lot-sizing models, inserted-idle-time scheduling, integrated production planning, and energy-aware scheduling all show that zero production or planned inactivity can be rational under specific costs, constraints, and temporal incentives \citep{WagnerWhitin1958,KanetSridharan2000,Jodlbauer2006,TrevinoMartinez2022,An2023}. Agricultural production differs in its biological calendars, spatial yield evidence, and crop-family recovery, so those manufacturing findings justify distinguishing forms of inactivity without establishing that their estimated effects or preferred policies apply directly to farms.
+
+Several limitations bound inference from the controlled experiment because four complete data-informed synthetic instances and ten stochastic seeds per method cannot support universal algorithm rankings. The pooled reference is an empirical nondominated union rather than a proven Pareto set, while time-limited SCIP points restrict certification beyond I01 and the single terminal forecasting holdout provides less temporal validation than a rolling-origin design. The covariance objective captures cross-crop exposure within each harvest week but excludes cross-period covariance, weather, yield, behavioural, and demand uncertainty; the optional market-throughput constraint remained inactive because no reproducible market-throughput series was available. Future work should compare equal wall-clock budgets, vary surrogate allocation rules, complete larger benchmark ladders, strengthen temporal forecast validation, and test explicitly modelled production-intensity requirements before claiming robustness under stronger utilization expectations.
 
 \section{Conclusion}
 
-This study formulates weekly agricultural production planning as a bi-objective event model with discrete crop calendars, continuous cultivated area, empirical crop eligibility, and correlated monetary price risk. A publication-safe experiment on four complete instances compares SCIP $\varepsilon$-constraint computation, NSGA-II, full SLSQP area refinement, and surrogate-guided selective refinement.
+This study formulates weekly agricultural production planning as a bi-objective event model combining discrete crop calendars, continuous cultivated area, empirical crop eligibility, and contemporaneous covariance-based monetary price risk. The formulation preserves expected gross-revenue maximization and correlated price-risk minimization as its only objectives, while operational utilization remains an explicitly post-hoc diagnostic rather than an optimization target.
 
-The evidence reveals a three-way trade-off. Exact computation provides status-bearing reference points but grows from seconds to hours and loses full-front certification as scale increases. Standard NSGA-II is the lowest-cost stochastic method and achieves the highest median hypervolume among stochastic alternatives on three instances. Surrogate gating cuts refinement calls by 75\% and substantially reduces refinement and total runtime on the larger completed instances, but the savings coincide with lower median Pareto quality than full refinement. Method choice should therefore reflect the value assigned to certification, frontier quality, and response time. Larger benchmark conclusions require completion of all prescribed seeds and must be regenerated through the same snapshot rules rather than inferred from partial runs.
+The computational evidence reveals a three-way trade-off among certification, Pareto quality, and response time that becomes increasingly consequential as instance scale increases. Exact $\varepsilon$-constraint computation provides status-bearing incumbents but grows from seconds to hours and loses full-front certification as scale increases, whereas full refinement records the highest stochastic median hypervolume on three instances after initialization is matched. Paired evidence supports only selected contrasts, and surrogate gating reduces refinement calls by 75\% while concentrating useful calls, although its computational savings coincide with lower Pareto quality on I04.
+
+The operational interpretation remains consequential because unoccupied time combines mandatory agronomic restrictions with endogenous economic choices and therefore cannot be labelled inefficient without examining the decoded schedule. Empirical generalization is limited to the evaluated data-informed synthetic agricultural benchmarks, but the underlying architecture may transfer structurally to production-planning systems where discrete sequencing, continuous allocation, time-dependent economic exposure, optional inactivity, and costly mathematical intensification must be coordinated under one computational budget.
 
 \section*{Data availability statement}
 
-The local reproducibility package contains source code, configuration, input provenance, benchmark metadata, result fronts, seed-level metrics, and the scripts used to regenerate every numerical table and figure. Redistribution of source data remains subject to its original provider terms.
+The source code supporting the price-forecasting and optimization procedures, together with the mathematical model, benchmark instances, configuration files, and execution instructions, is publicly available at \url{https://github.com/eitt/agricultural_nsgaII}. Redistribution of third-party input data remains subject to the original providers' terms, while additional experimental records are available from the corresponding author upon reasonable request.
+
+\section*{Author contributions}
+
+Leonardo Hern\'an Talero-Sarmiento contributed to conceptualization, methodology, software, formal analysis, investigation, data curation, visualization, and preparation and revision of the manuscript. Henry Lamos-Diaz contributed to conceptualization, methodology, validation, supervision, and review and editing of the manuscript, while both authors approved the submitted version and accept accountability for the work.
+
+\section*{Acknowledgements}
+
+The authors acknowledge the Master's Program in Industrial Engineering at Universidad Industrial de Santander for providing the academic setting in which this research was developed.
+
+\section*{Funding}
+
+The authors report that they received no external funding for the research design, computational analysis, interpretation of results, or preparation of this manuscript.
 
 \section*{Disclosure statement}
 
-No potential conflict of interest is reported by the author.
+The authors declare that they have no financial, professional, or personal relationships that could be perceived as potential conflicts of interest concerning this work.
+
+\section*{Declaration of generative AI use}
+
+OpenAI Codex using GPT-5, accessed in September 2026, assisted with verified software-code revision, copyediting, language refinement, and reproducible table and figure preparation during manuscript revision. The tool did not determine the research questions, originate the study design, select the evidentiary basis, or independently interpret the results. The authors reviewed the revised code, numerical outputs, prose, and references, confirmed the tool's terms of use were suitable for publication, verified originality and accuracy, and accept full responsibility for the integrity of the manuscript.
 
 \begin{thebibliography}{}
+\small
+\setlength{\itemsep}{-1pt}
 
 \bibitem[Ahumada \& Villalobos(2009)]{Ahumada2009}
 Ahumada, O., \& Villalobos, J. R. (2009). Application of planning models in the agri-food supply chain: A review. \emph{European Journal of Operational Research, 196}(1), 1--20. https://doi.org/10.1016/j.ejor.2008.02.014
 
+\bibitem[An et al.(2023)]{An2023}
+An, X., Si, G., Xia, T., Wang, D., Pan, E., \& Xi, L. (2023). An energy-efficient collaborative strategy of maintenance planning and production scheduling for serial-parallel systems under time-of-use tariffs. \emph{Applied Energy, 336}, 120794. https://doi.org/10.1016/j.apenergy.2023.120794
+
+\bibitem[Batta\"ia \& Dolgui(2013)]{Battaia2013}
+Batta\"ia, O., \& Dolgui, A. (2013). A taxonomy of line balancing problems and their solution approaches. \emph{International Journal of Production Economics, 142}(2), 259--277. https://doi.org/10.1016/j.ijpe.2012.10.020
+
+\bibitem[Batta\"ia \& Dolgui(2022)]{Battaia2022}
+Batta\"ia, O., \& Dolgui, A. (2022). Hybridizations in line balancing problems: A comprehensive review on new trends and formulations. \emph{International Journal of Production Economics, 250}, 108673. https://doi.org/10.1016/j.ijpe.2022.108673
+
+\bibitem[Boysen et al.(2022)]{Boysen2022}
+Boysen, N., Schulze, P., \& Scholl, A. (2022). Assembly line balancing: What happened in the last fifteen years? \emph{European Journal of Operational Research, 301}(3), 797--814. https://doi.org/10.1016/j.ejor.2021.11.043
+
 \bibitem[Burbano-Figueroa et al.(2022)]{Burbano2022}
 Burbano-Figueroa, O., Sierra-Monroy, A., David-Hinestroza, A., Whitney, C., Borgemeister, C., \& Luedeling, E. (2022). Farm-planning under risk: An application of decision analysis and portfolio theory for the assessment of crop diversification strategies in horticultural systems. \emph{Agricultural Systems, 199}, 103409. https://doi.org/10.1016/j.agsy.2022.103409
+
+\bibitem[Chugh et al.(2019)]{Chugh2019}
+Chugh, T., Sindhya, K., Hakanen, J., \& Miettinen, K. (2019). A survey on handling computationally expensive multiobjective optimization problems with evolutionary algorithms. \emph{Soft Computing, 23}(9), 3137--3166. https://doi.org/10.1007/s00500-017-2965-0
 
 \bibitem[Deb et al.(2002)]{Deb2002}
 Deb, K., Pratap, A., Agarwal, S., \& Meyarivan, T. (2002). A fast and elitist multi-objective genetic algorithm: NSGA-II. \emph{IEEE Transactions on Evolutionary Computation, 6}(2), 182--197. https://doi.org/10.1109/4235.996017
 
+\bibitem[DANE(2026)]{DANESIPSA}
+Departamento Administrativo Nacional de Estad\'istica (DANE). (2026). \emph{Sistema de Informaci\'on de Precios y Abastecimiento del Sector Agropecuario (SIPSA): Mayoristas, bolet\'in mensual y series hist\'oricas}. \url{https://www.dane.gov.co/index.php/estadisticas-por-tema/agropecuario/sistema-de-informacion-de-precios-sipsa/mayoristas-boletin-mensual-1}
+
+\bibitem[He et al.(2023)]{He2023}
+He, C., Zhang, Y., Gong, D., \& Ji, X. (2023). A review of surrogate-assisted evolutionary algorithms for expensive optimization problems. \emph{Expert Systems with Applications, 217}, 119495. https://doi.org/10.1016/j.eswa.2022.119495
+
 \bibitem[Hu et al.(2024)]{Hu2024}
-Hu, Y., Zhang, L., Wang, Q., Zhang, Z., \& Tang, Q. (2024). A matheuristic-based multi-objective evolutionary algorithm for flexible assembly job shop scheduling in cellular manufacture. \emph{Swarm and Evolutionary Computation, 87}, 101549. https://doi.org/10.1016/j.swevo.2024.101549
+Hu, Y., Zhang, L., Wang, Q., Zhang, Z., \& Tang, Q. (2024). A matheuristic-based multi-objective evolutionary algorithm for flexible assembly jobs shop scheduling problem in cellular manufacture. \emph{Swarm and Evolutionary Computation, 87}, 101549. https://doi.org/10.1016/j.swevo.2024.101549
+
+\bibitem[Huang et al.(2025)]{Huang2025}
+Huang, Z., Pu, Y., Zhang, Q., Wang, Y., Yang, J., \& Gu, Y. (2025). A Fuzzy-Expert enhanced NSGA-II approach for sustainable agricultural systems. \emph{Scientific Reports, 15}, 34070. https://doi.org/10.1038/s41598-025-14488-w
+
+\bibitem[Jin(2011)]{Jin2011}
+Jin, Y. (2011). Surrogate-assisted evolutionary computation: Recent advances and future challenges. \emph{Swarm and Evolutionary Computation, 1}(2), 61--70. https://doi.org/10.1016/j.swevo.2011.05.001
+
+\bibitem[Jodlbauer(2006)]{Jodlbauer2006}
+Jodlbauer, H. (2006). An approach for integrated scheduling and lot-sizing. \emph{European Journal of Operational Research, 172}(2), 386--400. https://doi.org/10.1016/j.ejor.2004.09.050
+
+\bibitem[Kanet \& Sridharan(2000)]{KanetSridharan2000}
+Kanet, J. J., \& Sridharan, V. (2000). Scheduling with inserted idle time: Problem taxonomy and literature review. \emph{Operations Research, 48}(1), 99--110. https://doi.org/10.1287/opre.48.1.99.12447
+
+\bibitem[Kropp et al.(2026)]{Kropp2026}
+Kropp, I., Nejadhashemi, A. P., Jha, P. K., Spinner, E., \& Toscano Pulido, G. (2026). Integrating interactive decision making into evolutionary multiobjective agricultural optimization. \emph{Computers and Electronics in Agriculture, 242}, 111359. https://doi.org/10.1016/j.compag.2025.111359
+
+\bibitem[Kucukkoc et al.(2024)]{Kucukkoc2024}
+Kucukkoc, I., Aydin Keskin, G., Karaoglan, A. D., \& Karadag, S. (2024). A hybrid discrete differential evolution--genetic algorithm approach with a new batch formation mechanism for parallel batch scheduling considering batch delivery. \emph{International Journal of Production Research, 62}(1--2), 460--482. https://doi.org/10.1080/00207543.2023.2233626
+
+\bibitem[Li et al.(2022)]{Li2022}
+Li, X., Cote, J.-F., Coelho, L. C., \& Wu, P. (2022). Novel efficient formulation and matheuristic for large-sized unrelated parallel machine scheduling with release dates. \emph{International Journal of Production Research, 60}(20), 6104--6123. https://doi.org/10.1080/00207543.2021.1983224
 
 \bibitem[Liu et al.(2024)]{Liu2024}
 Liu, S., Wang, H., Peng, W., \& Yao, W. (2024). Surrogate-assisted evolutionary algorithms for expensive combinatorial optimization: A survey. \emph{Complex \& Intelligent Systems, 10}, 5933--5949. https://doi.org/10.1007/s40747-024-01465-5
 
+\bibitem[Mavrotas(2009)]{Mavrotas2009}
+Mavrotas, G. (2009). Effective implementation of the $\varepsilon$-constraint method in multi-objective mathematical programming problems. \emph{Applied Mathematics and Computation, 213}(2), 455--465. https://doi.org/10.1016/j.amc.2009.03.037
+
+\bibitem[Pierce et al.(2025)]{Pierce2025}
+Pierce, C. M., Kim, Y.-K., \& Bazarov, I. (2025). A comparison-relationship-surrogate evolutionary algorithm for multi-objective optimization. \emph{Swarm and Evolutionary Computation, 95}, 101947. https://doi.org/10.1016/j.swevo.2025.101947
+
+\bibitem[Qin et al.(2024)]{Qin2024}
+Qin, H., Zhuang, E., Yu, Y., \& Li, H. (2024). A matheuristic approach for the multi-level capacitated lot-sizing problem with substitution and backorder. \emph{International Journal of Production Research, 62}(13), 4645--4673. https://doi.org/10.1080/00207543.2023.2270076
+
+\bibitem[R\u{a}dulescu et al.(2014)]{Radulescu2014}
+R\u{a}dulescu, M., R\u{a}dulescu, C. Z., \& Zb\u{a}ganu, G. (2014). A portfolio theory approach to crop planning under environmental constraints. \emph{Annals of Operations Research, 219}(1), 243--264. https://doi.org/10.1007/s10479-011-0902-7
+
+\bibitem[Seyfi \& Yan{\i}ko\u{g}lu(2026)]{Seyfi2026}
+Seyfi, S. A., \& Yan{\i}ko\u{g}lu, \.{I}. (2026). Optimizing washing machine production at Vestel: A matheuristic approach to planning and scheduling. \emph{International Journal of Production Research, 64}(3), 839--871. https://doi.org/10.1080/00207543.2025.2559135
+
+\bibitem[Talero-Sarmiento(2018)]{Talero2018}
+Talero-Sarmiento, L. H. (2018). \emph{Modelo de optimizaci\'on multi-objetivo para la programaci\'on de la producci\'on agr\'icola a peque\~na escala en Santander, Colombia} [Master's thesis, Universidad Industrial de Santander]. Repositorio Institucional UIS. \url{https://noesis.uis.edu.co/handle/20.500.14071/39294}
+
 \bibitem[Tan \& Comden(2012)]{Tan2012}
 Tan, B., \& Comden, N. (2012). Agricultural planning of annual plants under demand, maturation, harvest, and yield risk. \emph{European Journal of Operational Research, 220}(2), 539--549. https://doi.org/10.1016/j.ejor.2012.02.005
+
+\bibitem[Trevino-Martinez et al.(2022)]{TrevinoMartinez2022}
+Trevino-Martinez, S., Sawhney, R., \& Shylo, O. (2022). Energy-carbon footprint optimization in sequence-dependent production scheduling. \emph{Applied Energy, 315}, 118949. https://doi.org/10.1016/j.apenergy.2022.118949
+
+\bibitem[Vadseth et al.(2023)]{Vadseth2023}
+Vadseth, S. T., Andersson, H., St\aa lhane, M., \& Chitsaz, M. (2023). A multi-start route improving matheuristic for the production routeing problem. \emph{International Journal of Production Research, 61}(22), 7608--7629. https://doi.org/10.1080/00207543.2022.2154402
+
+\bibitem[Vergara Rodr\'iguez et al.(2025)]{Vergara2025}
+Vergara Rodr\'iguez, C. J., Mendoza-Ortega, G. P., M\'armol Barriosnuevo, M., \& D\'iaz Sierra, M. (2025). Multi-objective optimization for the sustainable planning of yam cultivation and distribution in the Colombian Caribbean. \emph{Frontiers in Sustainability, 6}, 1653365. https://doi.org/10.3389/frsus.2025.1653365
+
+\bibitem[Vi\'e et al.(2025)]{Vie2025}
+Vi\'e, M.-S., Zufferey, N., \& Coelho, L. C. (2025). A production and distribution scheduling matheuristic for reducing supply chain variations. \emph{Transportation Research Part E: Logistics and Transportation Review, 194}, 103905. https://doi.org/10.1016/j.tre.2024.103905
+
+\bibitem[Wagner \& Whitin(1958)]{WagnerWhitin1958}
+Wagner, H. M., \& Whitin, T. M. (1958). Dynamic version of the economic lot size model. \emph{Management Science, 5}(1), 89--96. https://doi.org/10.1287/mnsc.5.1.89
+
+\bibitem[Wang et al.(2026)]{Wang2026}
+Wang, Q., Li, H., Zhang, W., Zhang, Y., Gong, D., Chu, F., Mohamed, A. W., \& Muhammad, I. (2026). Surrogate-assisted evolutionary algorithm with adaptive local region search for high-dimensional expensive multi-objective optimization problems. \emph{Swarm and Evolutionary Computation, 100}, 102232. https://doi.org/10.1016/j.swevo.2025.102232
+
+\bibitem[Yu et al.(2025)]{Yu2025}
+Yu, L., Meng, Z., Kong, L., Sn\'a\v{s}el, V., \& Pan, J.-S. (2025). Surrogate-assisted differential evolution: A survey. \emph{Swarm and Evolutionary Computation, 94}, 101879. \url{https://doi.org/10.1016/j.swevo.2025.101879}
 
 \end{thebibliography}
 
