@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agri-production-decisions"
-version = "0.3.0"
+version = "0.4.0"
 description = "Reproducible exact, evolutionary, and surrogate-assisted multiobjective agricultural production planning."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -29,6 +29,7 @@ dependencies = [
   "matplotlib>=3.8",
   "PyYAML>=6.0",
   "tabulate>=0.9",
+  "threadpoolctl>=3.1",
 ]
 
 [project.optional-dependencies]
@@ -41,7 +42,7 @@ all = ["pyscipopt>=5.0", "zeep>=4.2", "pytest>=8", "ruff>=0.6"]
 agriopt = "agriopt.cli:main"
 
 [project.urls]
-Repository = "https://github.com/<ORG_OR_USER>/<REPOSITORY>"
+Repository = "https://github.com/eitt/agri-production-decisions"
 Paper = "https://doi.org/<DOI_PLACEHOLDER>"
 
 [tool.setuptools]
@@ -58,3 +59,4 @@ exclude = ["paper"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+

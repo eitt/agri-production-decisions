@@ -1,0 +1,94 @@
+project:
+  run_id: maintenance_publication
+  schedule_seed: 715
+data:
+  productivity: data/maintenance/productividad_actualizada.csv
+  price_history: data/maintenance/prices_weekly_model_prefix_observed.csv
+  price_forecast: data/maintenance/price_forecast_104w.csv
+  demand: null
+maintenance:
+  interval_weeks: 8
+  cost_cop_ha_pass: 250000
+  max_idle_weeks: null
+  scenarios:
+    interval_weeks:
+    - 4
+    - 8
+    - 12
+    cost_cop_ha_pass:
+    - 0
+    - 100000
+    - 250000
+    - 500000
+    max_idle_weeks:
+    - null
+    - 26
+    hard_idle_weeks:
+    - 4
+    - 8
+    - 12
+    - 26
+experiment:
+  instances:
+  - I01_micro
+  - I02_small
+  - I03_diverse
+  - I04_two_farms
+  - I05_coop_small
+  - I06_coop_medium
+  - I07_network
+  - I08_network_large
+  seeds:
+  - 7200
+  - 7201
+  - 7202
+  - 7203
+  - 7204
+  - 7205
+  - 7206
+  - 7207
+  - 7208
+  - 7209
+  - 7210
+  - 7211
+  methods:
+  - exact
+  - nsga2
+  - random_search
+  - random_local
+  - proxy_local
+  - surrogate_local
+  workers: 6
+  max_tasks_per_child: 1
+  budget_mode: wall_clock
+  budget_seconds_by_instance:
+    I01_micro: 20
+    I02_small: 20
+    I03_diverse: 40
+    I04_two_farms: 20
+    I05_coop_small: 40
+    I06_coop_medium: 60
+    I07_network: 80
+    I08_network_large: 120
+  population: 40
+  generations: 150
+  search:
+    refinements_per_generation: 2
+    neighbors: 8
+    refinement_budget_fraction: 0.3
+    min_training_samples: 8
+    retrain_every: 8
+    training_window: 128
+    n_estimators: 32
+    exploration_probability: 0.25
+    checkpoint_every_generations: 1
+  exact:
+    epsilon_fractions:
+    - 0.25
+    - 0.5
+    - 0.75
+    - 0.9
+    - 0.1
+    memory_limit_mb: 512
+    threads: 1
+    mip_gap: 0.0001

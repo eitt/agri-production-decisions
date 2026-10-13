@@ -1,0 +1,27 @@
+{
+  "date_utc": "2026-10-13",
+  "tests_passed": 67,
+  "smoke_completed_tasks": 6,
+  "smoke_decisions_audited": 47,
+  "smoke_methods": [
+    "nsga2",
+    "random_search",
+    "surrogate_local",
+    "random_local",
+    "proxy_local",
+    "exact"
+  ],
+  "resume_completed_task_hashes_unchanged": true,
+  "scenario_cases_checked": 28,
+  "scenario_cases_unchanged_on_resume": true,
+  "economic_anchor_parity_with_previous_study": {
+    "instances": 8,
+    "policy": {
+      "interval_weeks": 8,
+      "cost_cop_ha_pass": 250000,
+      "max_idle_weeks": null
+    },
+    "matched": "dated cultivation events, net receipts, and maintenance counts"
+  },
+  "full_576_task_experiment_rerun": false
+}
