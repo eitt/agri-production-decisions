@@ -91,11 +91,39 @@ def build_parser() -> argparse.ArgumentParser:
     pipe.add_argument("--run-id", default=None)
     pipe.add_argument("--strict", action="store_true")
 
+    maintenance = sub.add_parser("maintenance", help="Whole-plot model with idle-land maintenance")
+    maintenance_sub = maintenance.add_subparsers(dest="maintenance_command", required=True)
+    for command in ["run", "scenarios"]:
+        q = maintenance_sub.add_parser(command, help="Run resumable benchmark" if command == "run" else "Run maintenance sensitivity grid")
+        _add_config_arg(q, "configs/maintenance_smoke.yaml")
+        q.add_argument("--run-id", default=None)
+        if command == "run":
+            q.add_argument("--workers", type=int, default=None)
+    for command in ["status", "report"]:
+        q = maintenance_sub.add_parser(command, help="Read saved progress" if command == "status" else "Refresh preliminary/final reports")
+        q.add_argument("--run", required=True, help="Maintenance run id or absolute run directory")
+
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.command == "maintenance":
+        if args.maintenance_command == "run":
+            from .maintenance.runner import run_experiment as run_maintenance
+            out = run_maintenance(args.config, run_id=args.run_id, workers=args.workers)
+        elif args.maintenance_command == "scenarios":
+            from .maintenance.scenarios import run_scenarios
+            out = run_scenarios(args.config, run_id=args.run_id)
+        elif args.maintenance_command == "status":
+            from .maintenance.runner import status
+            print(json.dumps(status(args.run), indent=2, ensure_ascii=False))
+            return 0
+        else:
+            from .maintenance.reporting import build_report as report_maintenance
+            out = report_maintenance(args.run)
+        print(out)
+        return 0
     if args.command == "doctor":
         return doctor()
     if args.command == "data" and args.data_command == "update":
@@ -156,3 +184,4 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

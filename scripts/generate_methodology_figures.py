@@ -134,10 +134,10 @@ def figure_chromosome(names=None):
     xs, w = [1, 50, 99], 41
     labels = ["1  Eligibility\nSupported plot–crop pair",
               "2  Earliest start\nPrevious harvest + setup\n+ family recovery",
-              "3  Sowing date\nEarliest start + wait\nNext allowed sowing week",
+              "3  Sowing date\nEarliest start + wait\nNext allowed week",
               "4  Harvest date\nSowing + maturity",
               "5  Area and output\nFraction × plot area\nYield × cultivated area",
-              "6  Production event\nPlot, crop, dates and area"]
+              "6  Production event\nPlot, crop, dates, area"]
     for x, label in zip(xs, labels[:3]):
         _box(ax, x, 75, w, 17, label, face="blue_light", edge="blue")
     for x, label in zip(xs[::-1], labels[3:]):
@@ -209,7 +209,7 @@ def figure_workflow(snapshot, config):
     short = lambda items: ", ".join(i.split("_")[0] for i in items)
     fig, ax = _new_canvas(144)
     _panel(ax, 3, "1", "Empirical inputs")
-    specs = [(1, "Productivity\nMunicipality, crop and yield"),
+    specs = [(1, "Productivity\nMunicipality and crop\nYield observations"),
              (50, "Wholesale prices\nSIPSA data and forecasts"),
              (99, "Agronomic inputs\nCalendars and maturity")]
     for x, text in specs:
@@ -226,7 +226,7 @@ def figure_workflow(snapshot, config):
              (75, 88, f"H-NSGA-II\nSLSQP for {ecfg['hybrid']['refinement_fraction']:.0%} of offspring", "teal_light", "teal")]
     for x, y, text, face, edge in specs:
         _box(ax, x, y, 66, 15, text, face=face, edge=edge)
-    _text(ax, 1, 110, f"Evolutionary methods: matched initialization · {len(ecfg['seeds'])} seeds · {ecfg['nsga2']['population']} candidates · {ecfg['nsga2']['generations']} generations")
+    _text(ax, 1, 110, f"Evolutionary runs: shared start · {len(ecfg['seeds'])} seeds · {ecfg['nsga2']['population']} candidates · {ecfg['nsga2']['generations']} generations")
     _panel(ax, 118, "4", "Evaluation after all required runs are complete")
     _text(ax, 1, 125, r"Pareto quality: pooled reference, HV, IGD$^+$ and ε; paired Wilcoxon–Holm tests")
     _text(ax, 1, 132, "Computational effort: runtime, refinement calls, refinement time and useful-call rate")
@@ -296,3 +296,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
