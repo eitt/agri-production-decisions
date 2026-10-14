@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from copy import deepcopy
+from contextlib import contextmanager
 import importlib.metadata
 import hashlib
 import multiprocessing as mp
@@ -12,6 +13,7 @@ import platform
 import re
 import socket
 import sys
+import threading
 import time
 import traceback
 
@@ -19,9 +21,10 @@ import numpy as np
 import pandas as pd
 
 from ..config import load_config
-from .persistence import _process_alive, atomic_json, atomic_text, canonical_json, file_sha256, read_json, run_lock, utc_now
+from .persistence import _process_alive, atomic_bytes, atomic_json, atomic_text, canonical_json, file_sha256, read_json, run_lock, utc_now
 
 METHODS = ("exact", "nsga2", "random_search", "random_local", "proxy_local", "surrogate_local")
+REPORT_INTERVAL_S = 30
 
 
 def task_key(instance: str, method: str, seed: int) -> str:
@@ -35,9 +38,12 @@ def _clean_config(config: dict) -> dict:
 def _sources() -> dict:
     package = Path(__file__).resolve().parent
     source_root = package.parent.parent
-    paths = list(package.glob("*.py")) + [package.parent / f"{name}.py" for name in
-                                          ("nsga2", "model", "metrics", "exact_scip", "config", "paths", "provenance")]
-    return {str(path.relative_to(source_root)): file_sha256(path) for path in sorted(paths)}
+    paths = list(package.parent.rglob("*.py"))
+    hashes = {str(path.relative_to(source_root)): file_sha256(path) for path in sorted(paths)}
+    entry = source_root.parent / "main.py"
+    if entry.is_file():
+        hashes["main.py"] = file_sha256(entry)
+    return hashes
 
 
 def _input_hashes(paths, root: Path) -> dict:
@@ -167,6 +173,13 @@ def _state_view(state: dict, receipt: dict) -> dict:
 
 def status(run: str | Path) -> dict:
     folder = resolve_run(run)
+    if not (folder / "manifest.json").exists():
+        launches = sorted((folder / "launches").glob("*.json"))
+        if launches:
+            launch = read_json(launches[-1])
+            return {"run": str(folder), "total": 0, "counts": {}, "all_completed": False,
+                    "tasks": [], "preflight_status": launch["status"], "error": launch.get("error"),
+                    "launch_evidence": str(launches[-1])}
     manifest = read_json(folder / "manifest.json")
     protocol_sha = _protocol_sha256(manifest["protocol"])
     counts = {name: 0 for name in ("pending", "running", "completed", "failed", "interrupted")}
@@ -195,6 +208,34 @@ def _write_index(run: Path) -> dict:
     return current
 
 
+@contextmanager
+def _report_heartbeat(run: Path):
+    """Refresh committed partials even while the single worker is inside SCIP.
+
+    This thread reads atomic snapshots; it never touches algorithm state or
+    checkpoints. The launcher joins it before publishing the final report.
+    """
+    from .reporting import build_report
+    stop = threading.Event()
+
+    def refresh():
+        while not stop.wait(REPORT_INTERVAL_S):
+            try:
+                _write_index(run)
+                build_report(run)
+            except Exception as error:
+                atomic_json(run / "heartbeat_error.json", {"at": utc_now(), "error": str(error)})
+                print(f"Report refresh failed: {error}", file=sys.stderr, flush=True)
+
+    thread = threading.Thread(target=refresh, name="maintenance-report", daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        thread.join()
+
+
 def _worker(payload: dict) -> dict:
     from threadpoolctl import threadpool_limits
     from .inputs import load_inputs
@@ -209,7 +250,6 @@ def _worker(payload: dict) -> dict:
     state.update(status="running", attempts=int(state.get("attempts", 0)) + 1,
                  pid=os.getpid(), host=socket.gethostname(), updated_at=utc_now(), error=None)
     atomic_json(folder / "status.json", state)
-    last_global_report = [0.0]
 
     def progress(partial: dict) -> None:
         partial = dict(partial, instance=task["instance"], method=task["method"], seed=task["seed"],
@@ -219,11 +259,6 @@ def _worker(payload: dict) -> dict:
                       if name in partial})
         state["updated_at"] = utc_now()
         atomic_json(folder / "status.json", state)
-        if payload.get("refresh_global") and time.monotonic() - last_global_report[0] >= 30:
-            from .reporting import build_report
-            _write_index(run)
-            build_report(run)
-            last_global_report[0] = time.monotonic()
 
     try:
         with threadpool_limits(limits=1):
@@ -243,7 +278,7 @@ def _worker(payload: dict) -> dict:
                              error=f"Search stopped at a checkpoint: {result.get('stop_reason', result.get('status'))}")
                 atomic_json(folder / "status.json", state)
                 return {"key": task["key"], "status": "interrupted", "error": state["error"]}
-            for decision in result["decisions"]:
+            for decision in result["decisions"] + result.get("epsilon_incumbents", []):
                 physical = audit_calendar(data, decision.get("events", []), policy)
                 expected = [-physical["net_income_mcop"], physical["risk"]]
                 np.testing.assert_allclose(decision["objectives"], expected, rtol=1e-8, atol=1e-7)
@@ -257,7 +292,8 @@ def _worker(payload: dict) -> dict:
                                            rtol=1e-8, atol=1e-5)
                 if canonical_json(decision.get("maintenance", [])) != canonical_json(physical["maintenance"]):
                     raise ValueError("Saved maintenance activity differs from the physical calendar audit.")
-            result["audit"] = {"passed": True, "decisions_checked": len(result["decisions"]),
+            result["audit"] = {"passed": True,
+                                "decisions_checked": len(result["decisions"]) + len(result.get("epsilon_incumbents", [])),
                                 "scope": "calendar feasibility, care coverage, costs, objectives and chromosome reconstruction"}
             result.update(instance=task["instance"], method=task["method"], seed=task["seed"],
                           status="completed", budget_mode=task["settings"]["budget_mode"],
@@ -338,10 +374,22 @@ def run_experiment(config_path: str | Path, run_id: str | None = None, workers: 
                 # Repair the cosmetic progress record without rerunning search.
                 atomic_json(state_path, _state_view(state, receipt))
                 continue
+            # Keep every former result and receipt before repair overwrites it.
+            if (folder / "result.json").exists() or (folder / "completion.json").exists():
+                previous = run / "invalidated" / task["key"] / str(time.time_ns())
+                previous.mkdir(parents=True)
+                for name in ("result.json", "completion.json", "status.json", "partial.json", "error.txt"):
+                    if (folder / name).is_file():
+                        atomic_bytes(previous / name, (folder / name).read_bytes())
             if state.get("status") == "completed":
                 state["error"] = "Previous result failed validation; rerunning from its checkpoint."
             if state.get("status") == "running":
                 state["status"] = "interrupted"
+                state["error"] = "Previous worker stopped; resuming the last atomic checkpoint. In-flight work may be lost."
+                interruptions = list(state.get("interruptions", []))
+                interruptions.append({"detected_at": utc_now(), "previous_pid": state.get("pid"),
+                                      "last_checkpoint_update": state.get("updated_at")})
+                state["interruptions"] = interruptions
             else:
                 state["status"] = "pending"
             state["updated_at"] = utc_now()
@@ -354,14 +402,15 @@ def run_experiment(config_path: str | Path, run_id: str | None = None, workers: 
         for variable in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
             os.environ[variable] = "1"
         payloads = [{"run": str(run), "root": str(root), "config": config, "task": task,
-                     "refresh_global": count == 1, "protocol_sha256": protocol_sha} for task in pending]
+                     "protocol_sha256": protocol_sha} for task in pending]
         try:
             if count == 1:
-                for payload in payloads:
-                    outcome = _worker(payload)
-                    _write_index(run)
-                    build_report(run)
-                    print(f"{outcome['key']}: {outcome['status']}", flush=True)
+                with _report_heartbeat(run):
+                    for payload in payloads:
+                        outcome = _worker(payload)
+                        _write_index(run)
+                        # The heartbeat is the only concurrent report writer.
+                        print(f"{outcome['key']}: {outcome['status']}", flush=True)
             else:
                 options = {"max_workers": count, "mp_context": mp.get_context("spawn")}
                 if sys.version_info >= (3, 11):
@@ -371,7 +420,7 @@ def run_experiment(config_path: str | Path, run_id: str | None = None, workers: 
                     waiting = set(futures)
                     try:
                         while waiting:
-                            done, waiting = wait(waiting, timeout=30, return_when=FIRST_COMPLETED)
+                            done, waiting = wait(waiting, timeout=REPORT_INTERVAL_S, return_when=FIRST_COMPLETED)
                             for future in done:
                                 outcome = future.result()
                                 print(f"{outcome['key']}: {outcome['status']}", flush=True)

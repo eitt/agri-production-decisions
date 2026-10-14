@@ -44,13 +44,13 @@ def file_sha256(path: str | Path) -> str:
     return digest.hexdigest()
 
 
-def atomic_text(path: str | Path, value: str) -> None:
+def atomic_bytes(path: str | Path, value: bytes) -> None:
     """Replace only after a complete write; a previous checkpoint survives interruption."""
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary = tempfile.mkstemp(prefix=f".{target.name}.", suffix=".tmp", dir=target.parent)
     try:
-        with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as stream:
+        with os.fdopen(descriptor, "wb") as stream:
             stream.write(value)
             stream.flush()
             os.fsync(stream.fileno())
@@ -69,6 +69,10 @@ def atomic_text(path: str | Path, value: str) -> None:
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
+
+
+def atomic_text(path: str | Path, value: str) -> None:
+    atomic_bytes(path, value.encode("utf-8"))
 
 
 def atomic_json(path: str | Path, value: Any) -> None:

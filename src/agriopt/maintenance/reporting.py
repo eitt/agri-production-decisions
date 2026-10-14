@@ -190,14 +190,15 @@ def build_report(run: str | Path) -> dict:
         contrasts = _paired_inference(metrics, results, manifest["protocol"]["config"]["experiment"]["seeds"])
         _csv(final, "paired_comparisons.csv", contrasts,
              ["instance", "method", "comparator", "paired_seeds", "mean_hv_difference"])
-        atomic_json(final / "report.json", report)
         from .figures import export_figures
         export_figures(final / "figures", metrics, results)
+        # Commit the publication marker only after all final exports succeed.
+        atomic_json(final / "report.json", report)
     elif (folder / "final" / "report.json").exists():
         invalidated = folder / "invalidated"
         invalidated.mkdir(parents=True, exist_ok=True)
         old_final = invalidated / f"final-{time.time_ns()}"
         (folder / "final").replace(old_final)
-        atomic_json(old_final / "report.json", dict(report, warning="Final outputs invalidated: task validation failed. "
-                                                   "Use preliminary outputs until the run is repaired."))
+        atomic_json(old_final / "invalidation.json", dict(report, warning="Final outputs invalidated: task validation failed. "
+                                                         "Use preliminary outputs until the run is repaired."))
     return report

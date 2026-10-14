@@ -73,12 +73,16 @@ def test_corrupt_completed_result_is_recomputed_not_skipped(small_run):
     assert not runner.status(run)["all_completed"]
     build_report(run)
     assert not (run / "final").exists()
-    archived = next((run / "invalidated").glob("*/report.json"))
+    archived = next((run / "invalidated").glob("*/invalidation.json"))
     assert not read_json(archived)["complete"]
+    assert read_json(archived.parent / "report.json")["complete"]
     runner.run_experiment("irrelevant.yaml")
     assert runner.status(run)["all_completed"]
     assert read_json(result.parent / "status.json")["attempts"] == 2
     assert read_json(result)["audit"]["passed"]
+    preserved = list((run / "invalidated" / result.parent.name).glob("*/result.json"))
+    assert len(preserved) == 1
+    assert preserved[0].read_text(encoding="utf-8") == '{"truncated":'
 
 
 def test_task_failure_keeps_completed_results_and_preliminary_outputs(small_run, monkeypatch):
@@ -209,3 +213,18 @@ def test_completion_receipt_must_match_the_immutable_protocol(small_run):
     receipt["protocol_sha256"] = "different protocol"
     atomic_json(path, receipt)
     assert not runner.status(run)["all_completed"]
+
+
+@pytest.mark.parametrize("changed", ["configuration", "source"])
+def test_incompatible_resume_preserves_all_previous_task_bytes(small_run, monkeypatch, changed):
+    _, config, _ = small_run
+    run = runner.run_experiment("irrelevant.yaml")
+    previous = {path: path.read_bytes() for path in (run / "tasks").glob("*/*.json")}
+    if changed == "configuration":
+        config["experiment"]["generations"] += 1
+    else:
+        original = runner._sources()
+        monkeypatch.setattr(runner, "_sources", lambda: dict(original, **{"main.py": "changed"}))
+    with pytest.raises(RuntimeError, match="Cannot resume"):
+        runner.run_experiment("irrelevant.yaml")
+    assert previous == {path: path.read_bytes() for path in previous}

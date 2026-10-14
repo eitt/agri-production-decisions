@@ -32,7 +32,7 @@ from .model import (
 )
 
 METHODS = ("exact", "nsga2", "random_search", "random_local", "proxy_local", "surrogate_local")
-CHECKPOINT_VERSION = 1
+CHECKPOINT_VERSION = 2
 
 
 class Archive:
@@ -193,6 +193,11 @@ def _validate_state(data, policy, state, population_size):
             if individual.objectives is None or not np.isfinite(individual.objectives).all():
                 raise ValueError("checkpoint contains unevaluated or nonfinite individuals")
             _decision(data, policy, individual)
+        if state["identity"]["method"] == "exact":
+            if set(state["incumbents"]) - set(range(state["phase"])):
+                raise ValueError("checkpoint contains an incumbent from an unfinished epsilon phase")
+            for individual in state["incumbents"].values():
+                _decision(data, policy, individual)
         points = np.asarray([x.objectives for x in state["archive"]])
         expected_front = nondominated(points)
         if points.shape != expected_front.shape or not np.allclose(points, expected_front, rtol=1e-10, atol=1e-7):
@@ -217,6 +222,8 @@ def _result(data, policy, state, decision_cache):
         "history": state["history"], "logs": state["logs"], "ideal": state["ideal"].tolist(), "span": state["span"].tolist(),
         "status": state["status"], "stop_reason": state.get("stop_reason"), "generation": state["generation"],
         "completed_epsilon_subproblems": state.get("phase", 0), "evaluations": state["evaluations"],
+        "epsilon_incumbents": [dict(epsilon_index=index, **_decision(data, policy, x))
+                               for index, x in sorted(state.get("incumbents", {}).items())],
         "elapsed_s": state["elapsed_s"], "checkpoint_io_s": state["checkpoint_io_s"], "progress_io_s": state["progress_io_s"],
         "budget_mode": state["identity"]["settings"]["budget_mode"], "restarts": state["restarts"],
         "uninterrupted": not bool(state["restarts"]), "infeasible_candidates": state["infeasible_candidates"],
@@ -263,7 +270,8 @@ def run_search(data: ProblemData, policy: Policy, method: str, seed: int, settin
             "version": CHECKPOINT_VERSION, "identity": identity, "population": pop, "archive": archive.items,
             "ideal": ideal, "span": span, "rng_state": np.random.default_rng(seed + 100000).bit_generator.state,
             "gate_state": np.random.default_rng(seed + 200000).bit_generator.state,
-            "generation": 0, "phase": 0, "history": [{"elapsed_s": 0., "front": archive.points().tolist(), "generation": 0}],
+            "generation": 0, "phase": 0, "incumbents": {},
+            "history": [{"elapsed_s": 0., "front": archive.points().tolist(), "generation": 0}],
             "logs": [], "evaluations": 0, "X": [], "Y": [], "model": None, "lastfit": 0,
             "refinement_elapsed_s": 0., "elapsed_s": 0., "checkpoint_io_s": 0., "progress_io_s": 0.,
             "status": "running", "restarts": [], "infeasible_candidates": 0, "feasible_fallbacks": 0,
@@ -524,7 +532,7 @@ def _run_exact(data, policy, seed, settings, state, commit):
             fraction = fractions[index]
             threshold = -state["ideal"][0] - (1 - fraction) * state["span"][0]
             model.chgLhs(floor, float(threshold))
-            for x in state["population"] + archive.items:
+            for x in state["population"] + archive.items + list(state["incumbents"].values()):
                 if x.income_mcop >= threshold - 1e-8:
                     warm(x)
             limit = phase_limit if mode == "generations" else max(.001, (budget - state["elapsed_s"] - (time.perf_counter() - tick)) / (len(fractions) - index) * .90)
@@ -533,7 +541,10 @@ def _run_exact(data, policy, seed, settings, state, commit):
             search_elapsed = state["elapsed_s"] + time.perf_counter() - tick
             gap = float(model.getGap())
             record = {"fraction": fraction, "status": str(model.getStatus()), "gap": gap if np.isfinite(gap) else None,
-                      "elapsed_s": search_elapsed, "solutions": int(model.getNSols()), "net_floor": float(threshold), "solver_time_limit_s": limit}
+                      "epsilon_index": index, "elapsed_s": search_elapsed, "solutions": int(model.getNSols()),
+                      "nodes": int(model.getNNodes()), "solver_time_s": float(model.getSolvingTime()),
+                      "primal_bound": float(model.getPrimalbound()), "dual_bound": float(model.getDualbound()),
+                      "net_floor": float(threshold), "solver_time_limit_s": limit}
             previous_archive = list(archive.items)
             if model.getNSols() > 0:
                 solution = model.getBestSol()
@@ -544,10 +555,14 @@ def _run_exact(data, policy, seed, settings, state, commit):
                 record["floor_valid"] = bool(x.income_mcop >= threshold - 1e-6)
                 record["accepted_in_budget"] = bool(mode != "wall_clock" or state["elapsed_s"] + time.perf_counter() - tick <= budget)
                 if record["floor_valid"] and record["accepted_in_budget"]:
+                    # A phase incumbent remains available even if a later
+                    # Pareto update removes it from the nondominated archive.
+                    state["incumbents"][index] = x.clone()
                     archive.add([x])
                     record["accepted_in_budget"] = bool(mode != "wall_clock" or state["elapsed_s"] + time.perf_counter() - tick <= budget)
                     if not record["accepted_in_budget"]:
                         archive = Archive(previous_archive)
+                        state["incumbents"].pop(index, None)
             state["logs"].append(record)
             state["phase"] = index + 1
             state["elapsed_s"] += time.perf_counter() - tick
@@ -560,6 +575,7 @@ def _run_exact(data, policy, seed, settings, state, commit):
                 state["archive"] = archive.items
                 record["accepted_in_budget"] = False
                 record["discarded_after_deadline"] = True
+                state["incumbents"].pop(index, None)
             state["_active_tick"] = None
             commit()
             tick = time.perf_counter()

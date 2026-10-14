@@ -18,6 +18,7 @@ python -m agriopt maintenance report --run maintenance_smoke
 ```
 
 - [Windows and VS Code instructions](docs/VS_CODE_WINDOWS.md)
+- [Python 3.12 main.py launcher and local validation](docs/MAINTENANCE_LOCAL_EXECUTION.md)
 - [Mathematical model and assumptions](docs/MAINTENANCE_MODEL.md)
 - `configs/maintenance_local.yaml`: fixed-generation local benchmark.
 - `configs/maintenance_publication.yaml`: 576-task timed benchmark.

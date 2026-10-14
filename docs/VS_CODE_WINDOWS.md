@@ -17,15 +17,14 @@ py -3.12 -m venv .venv
 En `Ctrl+Shift+P` > `Python: Select Interpreter`, seleccione
 `.venv\Scripts\python.exe`. El método exacto necesita PySCIPOpt; un error de
 instalación o de solver se registra y debe resolverse antes de comparar todos
-los métodos. Descargue `Datos_mantenimiento_calibrados.zip`, colóquelo en la
-carpeta raíz del proyecto y extraiga sus archivos antes de correr:
+los métodos. Descargue `Datos_mantenimiento_calibrados.zip` y colóquelo en la
+carpeta raíz del proyecto. El runner valida los cuatro archivos y la procedencia
+del pronóstico en una carpeta temporal antes de importarlos en `data/maintenance/`.
+Rechaza reemplazar archivos existentes con bytes diferentes. Los datos quedan
+excluidos de Git; la configuración verifica sus hashes antes de usarlos.
 
-```powershell
-Expand-Archive -Path .\Datos_mantenimiento_calibrados.zip -DestinationPath . -Force
-```
-
-El ZIP crea `data/maintenance/` con los cuatro archivos necesarios. Los datos
-quedan excluidos de Git; la configuración verifica sus hashes antes de usarlos.
+La entrada sencilla es `main.py`; consulte los comandos y la evidencia local en
+[MAINTENANCE_LOCAL_EXECUTION.md](MAINTENANCE_LOCAL_EXECUTION.md).
 
 ## Prueba inicial
 

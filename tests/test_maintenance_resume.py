@@ -161,9 +161,14 @@ def test_exact_resume_retains_completed_epsilon_and_rebuilds_solver(tmp_path):
         state = pickle.load(handle)
     assert state["phase"] == 1
     first_log = state["logs"][0]
+    first_incumbent = state["incumbents"][0].clone()
     result = run_search(data, Policy(interval_weeks=4), "exact", 21, config, path)
     assert result["completed_epsilon_subproblems"] == 2
     assert result["logs"][0] == first_log
+    with path.open("rb") as handle:
+        resumed_state = pickle.load(handle)
+    np.testing.assert_array_equal(resumed_state["incumbents"][0].objectives, first_incumbent.objectives)
+    assert result["epsilon_incumbents"][0]["epsilon_index"] == 0
     assert [row["fraction"] for row in result["logs"]] == [.25, .5]
     assert "tree is rebuilt" in result["resume_scope"]
     for decision in result["decisions"]:

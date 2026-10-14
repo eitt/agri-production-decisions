@@ -35,9 +35,12 @@ def validate_weekly_matrix(df: pd.DataFrame, *, name: str = "price matrix", min_
         raise ValueError(f"{name}: requires at least {min_rows} weekly rows")
     if df.index.hasnans or df.index.has_duplicates or not df.index.is_monotonic_increasing:
         raise ValueError(f"{name}: dates must be unique, valid and chronologically increasing")
-    days = np.diff(df.index.asi8) / (86400 * 1e9)
-    if not np.all(days == 7):
-        observed = sorted(set(days.tolist()))
+    # Pandas can parse CSV dates at microsecond rather than nanosecond
+    # resolution. Compare timedeltas, not raw index integers with assumed units.
+    dates = df.index.tz_localize(None) if df.index.tz is not None else df.index
+    gaps = np.diff(dates.to_numpy())
+    if not np.all(gaps == np.timedelta64(7, "D")):
+        observed = sorted(set((gaps / np.timedelta64(1, "D")).tolist()))
         raise ValueError(f"{name}: expected exactly 7 days between weekly observations; found {observed}")
 
 
