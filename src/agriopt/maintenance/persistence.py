@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import socket
 import tempfile
+import time
 from typing import Any
 
 
@@ -44,6 +45,28 @@ def file_sha256(path: str | Path) -> str:
     return digest.hexdigest()
 
 
+def _replace_atomic(source: str | Path, target: str | Path) -> None:
+    """Retry transient Windows sharing locks without weakening atomic replacement.
+
+    Python readers and antivirus scanners can briefly deny rename/delete access.
+    Persistent access errors and all other failures still propagate to the task.
+    """
+    deadline = time.monotonic() + 5.0
+    delay = .01
+    while True:
+        try:
+            os.replace(source, target)
+            return
+        except OSError as error:
+            if os.name != "nt" or getattr(error, "winerror", None) not in {5, 32, 33}:
+                raise
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise
+            time.sleep(min(delay, remaining))
+            delay = min(delay * 2, .2)
+
+
 def atomic_bytes(path: str | Path, value: bytes) -> None:
     """Replace only after a complete write; a previous checkpoint survives interruption."""
     target = Path(path)
@@ -54,7 +77,7 @@ def atomic_bytes(path: str | Path, value: bytes) -> None:
             stream.write(value)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temporary, target)
+        _replace_atomic(temporary, target)
         if os.name != "nt":
             # Persist the rename itself as well as the file contents when the
             # filesystem supports directory fsync (Windows does not).
@@ -80,8 +103,9 @@ def atomic_json(path: str | Path, value: Any) -> None:
 
 
 def read_json(path: str | Path) -> dict:
-    with Path(path).open(encoding="utf-8") as stream:
-        return json.load(stream)
+    # Release the file handle BEFORE parsing large partial fronts. On Windows
+    # keeping it open throughout json.load() blocks another process's rename.
+    return json.loads(Path(path).read_bytes())
 
 
 def _process_alive(pid: int) -> bool:

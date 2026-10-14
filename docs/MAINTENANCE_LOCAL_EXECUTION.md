@@ -13,25 +13,37 @@ El paquete de mantenimiento ya existía. Git estaba limpio al iniciar la revisi�
 no se encontró `AGENTS.md` en el proyecto ni en los directorios superiores
 consultados. El entorno instalado usa Python 3.12.3 y dispone de PySCIPOpt.
 
-La suite completa pasó: **80 pruebas**. La evidencia automática está en
+La suite completa pasó tras la reparación de Windows: **85 pruebas**. La evidencia automática está en
 `outputs/maintenance/verification/pytest.xml`, y el resumen de esta revisión en
 [MAINTENANCE_LOCAL_VALIDATION.json](MAINTENANCE_LOCAL_VALIDATION.json).
 Las pruebas usan fixtures identificadas como datos sintéticos exclusivamente
 para verificación; ninguna se instaló como dato del experimento.
 
-Se intentaron tanto `maintenance_smoke.yaml` como el comando local solicitado.
-Ambos terminaron con código 1 antes de ejecutar tareas porque faltan los cuatro
-datos calibrados. El piloto empírico **no está completado** y el lote de 576
-tareas **no está activo**. No hay resultados finales publicados.
+Los primeros intentos terminaron con código 1 por datos faltantes y sus registros
+se conservaron en `launches/`. Posteriormente se encontró el ZIP en Downloads,
+se copió a la raíz verificando su SHA256 y se importaron los cuatro archivos
+tras validar la procedencia del pronóstico.
 
-La búsqueda comprobó el proyecto y `C:\Users\LEONA\Downloads`, incluida su
-configuración de carpeta de Windows. No apareció el archivo requerido. También
-se revisaron los ZIP de calibración y del proyecto encontrados en Downloads;
-no se utilizaron como reemplazo del paquete de mantenimiento.
+El piloto empírico completó **6 de 6 tareas**, con **52 decisiones auditadas**.
+Repetir su comando conservó los seis hashes de resultados y los contadores de
+intentos. La evidencia está en
+`outputs/maintenance/mantenimiento_02_piloto/pilot_validation.json` y sus
+reportes terminados en `outputs/maintenance/mantenimiento_02_piloto/final/`.
+
+El lote de **576 tareas está iniciado en segundo plano con dos workers**.
+Los logs del lanzamiento están en
+`outputs/maintenance/mantenimiento_02/launcher-20261014T154634688Z.stdout.log`
+y su archivo paralelo `.stderr.log`. No se publicaron resultados finales del
+lote; continúa ejecutando los presupuestos configurados.
+
+La búsqueda inicial comprobó el proyecto y `C:\Users\LEONA\Downloads`, incluida
+su configuración de carpeta de Windows, sin encontrar el paquete entonces.
+La búsqueda posterior sí encontró `Datos_mantenimiento_calibrados.zip` allí.
+Los otros ZIP encontrados no se utilizaron como reemplazo.
 
 ## Archivo requerido
 
-Coloque exactamente este paquete en:
+El paquete ya fue copiado y validado en:
 
 ```text
 C:\Users\LEONA\Documents\GitHub\agri-production-decisions\Datos_mantenimiento_calibrados.zip
@@ -123,6 +135,24 @@ La versión de checkpoint es 2; checkpoints de versiones anteriores se rechazan
 conservando sus archivos. Los resultados inválidos se archivan antes de reparar
 la tarea. Los reportes finales invalidados conservan su contenido y reciben un
 archivo separado `invalidation.json`.
+
+El 14 de octubre se corrigió un conflicto de acceso de Windows al reemplazar
+`partial.json` mientras el reporte lo leía. El lector ahora cierra el archivo
+antes de interpretar el JSON y el escritor reintenta bloqueos transitorios
+durante un máximo de cinco segundos, conservando el reemplazo atómico. Este
+tiempo pertenece a la escritura, que ya se excluía del reloj de búsqueda.
+
+El lote se detuvo para aplicar esa reparación y se reanudó con dos workers,
+priorizando tareas con checkpoints. Los dos resultados terminados conservaron
+sus hashes. `windows_io_repair_before.json` registra la interrupción y
+`windows_io_repair_sources/` conserva las fuentes anteriores.
+
+Una reparación revisada y registrada en `compatible_io_update.json` permite
+reanudar este mismo ID manteniendo el protocolo y los recibos originales. Su
+excepción exige hashes exactos y admite cambios únicamente en `persistence.py`
+y `runner.py`; cualquier diferencia de algoritmos, datos, configuración, entorno
+o workers sigue siendo rechazada. Los nuevos resultados registran además los
+hashes de las fuentes efectivamente ejecutadas en `execution_source_sha256`.
 
 Se mantiene el modelo de parcelas completas, intervención en cada octava semana
 ociosa, costo supuesto de COP 250.000/ha/intervención y `max_idle_weeks` opcional.

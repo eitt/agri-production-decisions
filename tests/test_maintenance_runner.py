@@ -228,3 +228,36 @@ def test_incompatible_resume_preserves_all_previous_task_bytes(small_run, monkey
     with pytest.raises(RuntimeError, match="Cannot resume"):
         runner.run_experiment("irrelevant.yaml")
     assert previous == {path: path.read_bytes() for path in previous}
+
+
+def test_explicit_io_repair_resumes_without_rewriting_scientific_results(small_run, monkeypatch):
+    run = runner.run_experiment("irrelevant.yaml")
+    baseline = read_json(run / "manifest.json")["protocol"]
+    prior = {path: path.read_bytes() for path in (run / "tasks").glob("*/result.json")}
+    sources = dict(baseline["source_sha256"])
+    key = next(key for key in sources if key.replace("\\", "/") == "agriopt/maintenance/persistence.py")
+    sources[key] = "reviewed storage fix"
+    monkeypatch.setattr(runner, "_sources", lambda: sources)
+    with pytest.raises(RuntimeError, match="Cannot resume"):
+        runner.run_experiment("irrelevant.yaml")
+    atomic_json(run / "compatible_io_update.json", {
+        "kind": "windows_atomic_read_sharing_fix_v1",
+        "baseline_protocol_sha256": runner._protocol_sha256(baseline), "source_sha256": sources})
+    runner.run_experiment("irrelevant.yaml")
+    assert prior == {path: path.read_bytes() for path in prior}
+    assert read_json(run / "manifest.json")["protocol"] == baseline
+    assert all(t["attempts"] == 1 for t in runner.status(run)["tasks"])
+
+
+def test_io_repair_receipt_never_authorizes_changed_search_algorithm(small_run, monkeypatch):
+    run = runner.run_experiment("irrelevant.yaml")
+    baseline = read_json(run / "manifest.json")["protocol"]
+    sources = dict(baseline["source_sha256"])
+    key = next(key for key in sources if key.replace("\\", "/") == "agriopt/maintenance/search.py")
+    sources[key] = "incompatible scientific change"
+    monkeypatch.setattr(runner, "_sources", lambda: sources)
+    atomic_json(run / "compatible_io_update.json", {
+        "kind": "windows_atomic_read_sharing_fix_v1",
+        "baseline_protocol_sha256": runner._protocol_sha256(baseline), "source_sha256": sources})
+    with pytest.raises(RuntimeError, match="Cannot resume"):
+        runner.run_experiment("irrelevant.yaml")

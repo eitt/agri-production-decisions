@@ -140,6 +140,34 @@ def _protocol_sha256(protocol: dict) -> str:
     return hashlib.sha256(canonical_json(protocol).encode("utf-8")).hexdigest()
 
 
+def _compatible_io_update(run: Path, baseline: dict, candidate: dict) -> bool:
+    """Accept only an explicitly recorded, fingerprinted persistence repair.
+
+    Scientific source changes, data, settings and environment remain immutable.
+    The original protocol and completion receipts retain their original hashes.
+    A repair receipt is prepared separately after review, never automatically.
+    """
+    path = run / "compatible_io_update.json"
+    if not path.is_file():
+        return False
+    try:
+        receipt = read_json(path)
+        if receipt.get("kind") != "windows_atomic_read_sharing_fix_v1" \
+                or receipt.get("baseline_protocol_sha256") != _protocol_sha256(baseline) \
+                or receipt.get("source_sha256") != candidate["source_sha256"]:
+            return False
+        old_sources, new_sources = baseline["source_sha256"], candidate["source_sha256"]
+        changed = {key.replace("\\", "/") for key in set(old_sources) | set(new_sources)
+                   if old_sources.get(key) != new_sources.get(key)}
+        allowed = {"agriopt/maintenance/persistence.py", "agriopt/maintenance/runner.py"}
+        if not changed or not changed.issubset(allowed):
+            return False
+        scientific = dict(candidate, source_sha256=old_sources)
+        return canonical_json(scientific) == canonical_json(baseline)
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+
+
 def _completion(run: Path, task: dict, protocol_sha256: str | None = None) -> dict | None:
     """An independently committed receipt, not progress-file state, proves completion."""
     folder = run / "tasks" / task["key"]
@@ -298,7 +326,8 @@ def _worker(payload: dict) -> dict:
             result.update(instance=task["instance"], method=task["method"], seed=task["seed"],
                           status="completed", budget_mode=task["settings"]["budget_mode"],
                           settings=task["settings"], instance_metadata=metadata, maintenance=config["maintenance"],
-                          protocol_sha256=payload["protocol_sha256"])
+                          protocol_sha256=payload["protocol_sha256"],
+                          execution_source_sha256=payload.get("execution_source_sha256"))
             _validate_result(result, task)
             atomic_json(folder / "result.json", result)
             result_sha = file_sha256(folder / "result.json")
@@ -341,14 +370,19 @@ def run_experiment(config_path: str | Path, run_id: str | None = None, workers: 
     protocol = {"schema_version": 2, "config": _clean_config(config), "inputs_sha256": _input_hashes(paths, root),
                 "source_sha256": _sources(), "environment": _environment(), "actual_workers": count, "tasks": grid}
     protocol_sha = _protocol_sha256(protocol)
+    execution_sources = protocol["source_sha256"]
     run = root / "outputs" / "maintenance" / selected_id
     with run_lock(run):
         manifest_path = run / "manifest.json"
         if manifest_path.exists():
             manifest = read_json(manifest_path)
             if canonical_json(manifest["protocol"]) != canonical_json(protocol):
-                raise RuntimeError("Cannot resume: configuration, input files, source code, or software environment changed. "
-                                   "Use a new --run-id to preserve the previous experiment.")
+                if not _compatible_io_update(run, manifest["protocol"], protocol):
+                    raise RuntimeError("Cannot resume: configuration, input files, source code, or software environment changed. "
+                                       "Use a new --run-id to preserve the previous experiment.")
+                # This documented storage-only fix changes no search algorithm.
+                # Preserve all prior results and receipts byte for byte.
+                protocol_sha = _protocol_sha256(manifest["protocol"])
         else:
             atomic_json(manifest_path, {"created_at": utc_now(), "protocol": protocol, "tasks": grid,
                                         "environment": _environment(), "config_path": str(config_path)})
@@ -365,6 +399,7 @@ def run_experiment(config_path: str | Path, run_id: str | None = None, workers: 
                     raise RuntimeError(f"Previous worker {previous.get('pid')} on {host} is still active for "
                                        f"{task['key']}. Wait for it to finish or stop the previous local launcher.")
         pending = []
+        recovering = set()
         for task in grid:
             folder = run / "tasks" / task["key"]
             state_path = folder / "status.json"
@@ -374,6 +409,8 @@ def run_experiment(config_path: str | Path, run_id: str | None = None, workers: 
                 # Repair the cosmetic progress record without rerunning search.
                 atomic_json(state_path, _state_view(state, receipt))
                 continue
+            if (folder / "checkpoint.pkl").is_file():
+                recovering.add(task["key"])
             # Keep every former result and receipt before repair overwrites it.
             if (folder / "result.json").exists() or (folder / "completion.json").exists():
                 previous = run / "invalidated" / task["key"] / str(time.time_ns())
@@ -399,10 +436,14 @@ def run_experiment(config_path: str | Path, run_id: str | None = None, workers: 
         build_report(run)
         order = np.random.default_rng(int(config.get("project", {}).get("schedule_seed", 715)))
         order.shuffle(pending)
+        # Recover saved work before starting untouched tasks; preserve the
+        # seeded order within each group and every task's scientific budget.
+        pending.sort(key=lambda task: task["key"] not in recovering)
         for variable in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
             os.environ[variable] = "1"
         payloads = [{"run": str(run), "root": str(root), "config": config, "task": task,
-                     "protocol_sha256": protocol_sha} for task in pending]
+                     "protocol_sha256": protocol_sha, "execution_source_sha256": execution_sources}
+                    for task in pending]
         try:
             if count == 1:
                 with _report_heartbeat(run):

@@ -1,5 +1,5 @@
 {
-  "checked_at_utc": "2026-10-14T15:25:00.165746+00:00",
+  "checked_at_utc": "2026-10-14T15:49:04.058102+00:00",
   "base_commit": "62ff8ad974c17bc322ab0027ecf185cb97181b52",
   "branch": "codex/maintenance-resumable",
   "remote_branch_matched_at_inspection": true,
@@ -16,48 +16,47 @@
     "pyscipopt": "6.2.1"
   },
   "tests": {
-    "tests": 80,
+    "tests": 85,
     "failures": 0,
     "errors": 0,
     "skipped": 0,
-    "duration_s": 47.67,
+    "duration_s": 59.625,
     "command": ".\\.venv\\Scripts\\python.exe -m pytest --junitxml=outputs/maintenance/verification/pytest.xml",
     "junit": "outputs/maintenance/verification/pytest.xml"
   },
-  "inputs_missing": [
-    "C:\\Users\\LEONA\\Documents\\GitHub\\agri-production-decisions\\data\\maintenance\\productividad_actualizada.csv",
-    "C:\\Users\\LEONA\\Documents\\GitHub\\agri-production-decisions\\data\\maintenance\\prices_weekly_model_prefix_observed.csv",
-    "C:\\Users\\LEONA\\Documents\\GitHub\\agri-production-decisions\\data\\maintenance\\price_forecast_104w.csv",
-    "C:\\Users\\LEONA\\Documents\\GitHub\\agri-production-decisions\\data\\maintenance\\forecast_provenance.json"
-  ],
+  "inputs_missing": [],
   "required_archive": "C:\\Users\\LEONA\\Documents\\GitHub\\agri-production-decisions\\Datos_mantenimiento_calibrados.zip",
   "archive_search_roots": [
     "C:\\Users\\LEONA\\Documents\\GitHub\\agri-production-decisions",
     "C:\\Users\\LEONA\\Downloads",
     "C:\\Users\\LEONA\\Descargas"
   ],
-  "matching_archive_found": false,
-  "empirical_hash_validation_performed": false,
+  "matching_archive_found": true,
+  "empirical_hash_validation_performed": true,
   "forecast_substituted": false,
   "smoke": {
     "run": "C:\\Users\\LEONA\\Documents\\GitHub\\agri-production-decisions\\outputs\\maintenance\\mantenimiento_02_piloto",
-    "total": 0,
-    "counts": {},
-    "all_completed": false,
-    "tasks": [],
-    "preflight_status": "blocked",
-    "error": "FileNotFoundError: Missing calibrated maintenance inputs:\n  productivity: C:\\Users\\LEONA\\Documents\\GitHub\\agri-production-decisions\\data\\maintenance\\productividad_actualizada.csv\n  price_history: C:\\Users\\LEONA\\Documents\\GitHub\\agri-production-decisions\\data\\maintenance\\prices_weekly_model_prefix_observed.csv\n  price_forecast: C:\\Users\\LEONA\\Documents\\GitHub\\agri-production-decisions\\data\\maintenance\\price_forecast_104w.csv\n  forecast_provenance: C:\\Users\\LEONA\\Documents\\GitHub\\agri-production-decisions\\data\\maintenance\\forecast_provenance.json\nPlace Datos_mantenimiento_calibrados.zip in the project root and repeat the command; it will validate and import the four files into data/maintenance/. No forecast is generated or substituted.",
-    "launch_evidence": "C:\\Users\\LEONA\\Documents\\GitHub\\agri-production-decisions\\outputs\\maintenance\\mantenimiento_02_piloto\\launches\\1791991352748595300-30572.json"
+    "total": 6,
+    "counts": {
+      "pending": 0,
+      "running": 0,
+      "completed": 6,
+      "failed": 0,
+      "interrupted": 0
+    },
+    "all_completed": true
   },
   "local": {
     "run": "C:\\Users\\LEONA\\Documents\\GitHub\\agri-production-decisions\\outputs\\maintenance\\mantenimiento_02",
-    "total": 0,
-    "counts": {},
-    "all_completed": false,
-    "tasks": [],
-    "preflight_status": "blocked",
-    "error": "FileNotFoundError: Missing calibrated maintenance inputs:\n  productivity: C:\\Users\\LEONA\\Documents\\GitHub\\agri-production-decisions\\data\\maintenance\\productividad_actualizada.csv\n  price_history: C:\\Users\\LEONA\\Documents\\GitHub\\agri-production-decisions\\data\\maintenance\\prices_weekly_model_prefix_observed.csv\n  price_forecast: C:\\Users\\LEONA\\Documents\\GitHub\\agri-production-decisions\\data\\maintenance\\price_forecast_104w.csv\n  forecast_provenance: C:\\Users\\LEONA\\Documents\\GitHub\\agri-production-decisions\\data\\maintenance\\forecast_provenance.json\nPlace Datos_mantenimiento_calibrados.zip in the project root and repeat the command; it will validate and import the four files into data/maintenance/. No forecast is generated or substituted.",
-    "launch_evidence": "C:\\Users\\LEONA\\Documents\\GitHub\\agri-production-decisions\\outputs\\maintenance\\mantenimiento_02\\launches\\1791991354538516500-33096.json"
+    "total": 576,
+    "counts": {
+      "pending": 570,
+      "running": 2,
+      "completed": 2,
+      "failed": 0,
+      "interrupted": 2
+    },
+    "all_completed": false
   },
   "local_expected_tasks": 576,
   "local_requested_workers": 2,
@@ -88,10 +87,10 @@
     "agriopt\\maintenance\\io_utils.py": "47fe91e47aa459908db11ae90027b4679f03ece7f4ec882861f85d65f0d171e5",
     "agriopt\\maintenance\\model.py": "6574960d910c18072301fea85676833f320a1038ae2be7c927a2914e4f5a55d2",
     "agriopt\\maintenance\\parameters.py": "4394eee87f0fdf0b2a62cb766940176fbc5eff33855f1eeff36374109f27f3be",
-    "agriopt\\maintenance\\persistence.py": "0dda1e1c257c8e56b8e88e9b81e8290bf7195324dc4cb21c08a61aa7e0a33124",
+    "agriopt\\maintenance\\persistence.py": "be24af13c7f5d8b8e97f87ebf0a2d3d4b0eb98643a3a1804160034ea0eb1fb63",
     "agriopt\\maintenance\\productivity.py": "456f5915828de93f13eff1eb4b301d32cbed3d93ecc32b21f2ba625ec8b58bc5",
     "agriopt\\maintenance\\reporting.py": "d5c85df12d19bf7fb22455de6f81037ee9bf1f10dd47c43c718a18a723ab5db8",
-    "agriopt\\maintenance\\runner.py": "98d5d958b69e58e240142d6d960c24e127931c9b5d3c110c8f99f8b72e99d0fe",
+    "agriopt\\maintenance\\runner.py": "579e18a014ef162443f5fc435138aef2d2c6717677359aeff84c07afebf00112",
     "agriopt\\maintenance\\scenarios.py": "7e809fa56937355b44077244ba7105f0cbe26ba8340c0e693bedaa4911de0a26",
     "agriopt\\maintenance\\search.py": "69b1a8835ef231f153e5f8ad2874c928ecead28dda9604c218d8890e6b791fe9",
     "agriopt\\metrics.py": "2571134fba097e1157d6f0d8dc20f5822664b1d242bf25abe41aaebd02651904",
@@ -106,8 +105,93 @@
     "agriopt\\validation.py": "5d0bcfaea2facc729ec725f30ccc28791d04523c88b399dc981df4e92e8da5b7",
     "main.py": "a998110f1df7a308d3edb0e7d6836e3d42d2f993a93d41b101366cf8affa3422"
   },
-  "completed_empirical_pilot": false,
-  "full_batch_running": false,
+  "completed_empirical_pilot": true,
+  "full_batch_running": true,
   "final_results_published": false,
-  "test_fixtures_are_not_empirical_experiment_inputs": true
+  "test_fixtures_are_not_empirical_experiment_inputs": true,
+  "archive_source": "C:\\Users\\LEONA\\Downloads\\Datos_mantenimiento_calibrados.zip",
+  "smoke_final_results_published": true,
+  "pilot_validation": {
+    "counts": {
+      "pending": 0,
+      "running": 0,
+      "completed": 6,
+      "failed": 0,
+      "interrupted": 0
+    },
+    "tasks": 6,
+    "audited_decisions": 52,
+    "method_status": {
+      "exact": "completed",
+      "nsga2": "completed",
+      "proxy_local": "completed",
+      "random_local": "completed",
+      "random_search": "completed",
+      "surrogate_local": "completed"
+    },
+    "result_sha256_before_resume": {
+      "tasks\\I01_micro__exact__7200\\result.json": "bd0a1002927707f8655d3bd7e6f76d64afee6bc0f29f163e47ea2e0576ac5f12",
+      "tasks\\I01_micro__nsga2__7200\\result.json": "865e37eee3961b0e0719f203282d68a1faff8d86a6b8b2ea4f789c8bdade4e47",
+      "tasks\\I01_micro__proxy_local__7200\\result.json": "d13207c024e571216ae5683adc9e584b07e200e4e7e6e40307d0cf4024300799",
+      "tasks\\I01_micro__random_local__7200\\result.json": "43ed84576ee13432890a431fdfd2a53cacf001f44153177b5fa1c337c952ee30",
+      "tasks\\I01_micro__random_search__7200\\result.json": "35ff5a6d5915fe1100c156693fafc93548b72f9525b43c5108486bf3edea24a2",
+      "tasks\\I01_micro__surrogate_local__7200\\result.json": "315632a9bfc2cdb83c24fea62afcd11a211bb17ec9e90f6b7589b1d95c6d2791"
+    },
+    "attempts_before_resume": {
+      "I01_micro__exact__7200": 1,
+      "I01_micro__nsga2__7200": 1,
+      "I01_micro__random_search__7200": 1,
+      "I01_micro__random_local__7200": 1,
+      "I01_micro__proxy_local__7200": 1,
+      "I01_micro__surrogate_local__7200": 1
+    },
+    "forecast_import": {
+      "validated_at": "2026-10-14T15:30:18.125809+00:00",
+      "archive": "C:\\Users\\LEONA\\Documents\\GitHub\\agri-production-decisions\\Datos_mantenimiento_calibrados.zip",
+      "archive_sha256": "25c825a4ae040938ba2cf6768621c68f15caa9b870bacc8042c336ef45f8e359",
+      "inputs_sha256": {
+        "productividad_actualizada.csv": "613e9bc67c462f004cbc2e7093ab0e58a21eef190cd3aaeef547eb5f68e5b832",
+        "prices_weekly_model_prefix_observed.csv": "129a09ee5cf7f9346258318fa747532c712b8e3fef86eae6245a41b785e374f5",
+        "price_forecast_104w.csv": "e2777ffce8147b40696148d4a65daf6db2ba6522e3536cd3267b600bcdc5a3d6",
+        "forecast_provenance.json": "27c93daa6bf4f4641533438b07d641e2a18e88f886d73ac56c042ace8c36d84f"
+      },
+      "forecast_provenance_checked": true
+    },
+    "checked_at_utc": "2026-10-14T15:31:25.744475+00:00",
+    "resume_hashes_unchanged": true,
+    "resume_attempts_unchanged": true
+  },
+  "background_launcher": {
+    "pid": 25920,
+    "active_at_check": true,
+    "stdout": "outputs/maintenance/mantenimiento_02/launcher-20261014T154634688Z.stdout.log",
+    "stderr": "outputs/maintenance/mantenimiento_02/launcher-20261014T154634688Z.stderr.log"
+  },
+  "running_tasks": [
+    {
+      "key": "I06_coop_medium__nsga2__7211",
+      "pid": 32272,
+      "generation": 62,
+      "evaluations": 2480,
+      "elapsed_s": 40.186894500031485,
+      "attempts": 2
+    },
+    {
+      "key": "I08_network_large__proxy_local__7208",
+      "pid": 4884,
+      "generation": 19,
+      "evaluations": 1064,
+      "elapsed_s": 66.88601059999928,
+      "attempts": 2
+    }
+  ],
+  "windows_io_repair": {
+    "receipt": "outputs/maintenance/mantenimiento_02/compatible_io_update.json",
+    "original_completed_results_preserved": 2,
+    "scientific_algorithms_changed": false,
+    "scientific_budgets_changed": false,
+    "regression_tests": "outputs/maintenance/verification/windows_io_pytest.xml",
+    "stopped_launcher_pid": 31948,
+    "resumed_launcher_pid": 25920
+  }
 }
